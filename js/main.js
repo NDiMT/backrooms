@@ -74,11 +74,14 @@
   function lock() { canvas.requestPointerLock(); }
 
   document.addEventListener('pointerlockchange', () => {
+    // Στα touch δεν χρησιμοποιούμε pointer lock — μην κάνεις auto-pause.
+    if (TouchControls.isTouch) return;
     const locked = document.pointerLockElement === canvas;
     if (!locked && state === 'PLAYING') {
       state = 'PAUSED';
       pauseEl.classList.remove('hidden');
       hudEl.classList.add('hidden');
+      TouchControls.hide();
     }
   });
 
@@ -96,14 +99,30 @@
     pauseEl.classList.add('hidden');
     hudEl.classList.remove('hidden');
     state = 'PLAYING';
-    lock();
+    if (TouchControls.isTouch) {
+      TouchControls.show();
+      $('pause-btn').classList.remove('hidden');
+    } else {
+      lock();
+    }
     if (elapsed === 0) {
       showMessage('Έκανες noclip έξω από την πραγματικότητα. Βρες την έξοδο.', 5000);
     }
   }
 
+  function pauseGame() {
+    if (state !== 'PLAYING') return;
+    state = 'PAUSED';
+    pauseEl.classList.remove('hidden');
+    hudEl.classList.add('hidden');
+    TouchControls.hide();
+    $('pause-btn').classList.add('hidden');
+    if (!TouchControls.isTouch) document.exitPointerLock();
+  }
+
   $('start-btn').addEventListener('click', startGame);
   $('resume-btn').addEventListener('click', startGame);
+  $('pause-btn').addEventListener('click', pauseGame);
   const restart = () => { location.href = '?seed=' + Math.floor(Math.random() * 0xffffffff); };
   $('retry-btn').addEventListener('click', restart);
   $('again-btn').addEventListener('click', restart);
@@ -136,7 +155,9 @@
   function die(reason, withScare) {
     state = 'DEAD';
     hudEl.classList.add('hidden');
-    document.exitPointerLock();
+    TouchControls.hide();
+    $('pause-btn').classList.add('hidden');
+    if (!TouchControls.isTouch) document.exitPointerLock();
     $('death-reason').textContent = reason;
     $('death-stats').textContent =
       `Άντεξες ${formatTime(elapsed)} · Almond water: ${bottlesFound}/6 · Seed: ${seed}`;
@@ -157,7 +178,9 @@
   function winGame() {
     state = 'WIN';
     hudEl.classList.add('hidden');
-    document.exitPointerLock();
+    TouchControls.hide();
+    $('pause-btn').classList.add('hidden');
+    if (!TouchControls.isTouch) document.exitPointerLock();
     $('win-stats').textContent =
       `Χρόνος: ${formatTime(elapsed)} · Almond water: ${bottlesFound}/6 · Seed: ${seed}`;
     GameAudio.setChase(false);
@@ -175,15 +198,29 @@
   function update(dt) {
     elapsed += dt;
 
+    // βλέμμα από touch (drag)
+    if (TouchControls.isTouch) {
+      const look = TouchControls.consumeLook();
+      player.yaw -= look.dx * 0.0042;
+      player.pitch -= look.dy * 0.0042;
+      const lim = Math.PI / 2 - 0.08;
+      player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
+    }
+
     // κίνηση
     let mx = 0, mz = 0;
     if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
     if (keys['KeyS'] || keys['ArrowDown']) mz -= 1;
     if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
     if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
-    const moving = mx !== 0 || mz !== 0;
+    mx += TouchControls.state.move.x;
+    mz += TouchControls.state.move.z;
+    mx = Math.max(-1, Math.min(1, mx));
+    mz = Math.max(-1, Math.min(1, mz));
+    const moving = Math.abs(mx) > 0.05 || Math.abs(mz) > 0.05;
 
-    const wantsRun = (keys['ShiftLeft'] || keys['ShiftRight']) && moving;
+    const wantsRun =
+      ((keys['ShiftLeft'] || keys['ShiftRight']) || TouchControls.state.running) && moving;
     const running = wantsRun && player.stamina > 0;
     if (running) player.stamina = Math.max(0, player.stamina - 24 * dt);
     else player.stamina = Math.min(100, player.stamina + 13 * dt);

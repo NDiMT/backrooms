@@ -56,6 +56,9 @@
     border-radius: 50%; background: rgba(216, 207, 158, 0.7);
   }
   #bars { position: absolute; left: 26px; bottom: 26px; width: 210px; }
+  /* Στα touch, οι μπάρες πάνε πάνω-αριστερά για να μην πέφτουν στο joystick */
+  body.touch-mode #bars { bottom: auto; top: 20px; left: 20px; width: 160px; }
+  body.touch-mode #message { bottom: 24%; }
   .bar-label { font-size: 11px; letter-spacing: 0.25em; opacity: 0.7; margin-bottom: 4px; }
   .bar {
     height: 7px; margin-bottom: 12px;
@@ -72,8 +75,48 @@
     font-size: 17px; letter-spacing: 0.12em;
     color: #e6dfb8; text-shadow: 0 0 10px #000;
     opacity: 0; transition: opacity 0.6s;
-    white-space: nowrap;
+    white-space: nowrap; max-width: 92vw;
+    text-align: center; white-space: normal;
   }
+
+  /* Touch controls (κινητά / APK).
+     Το overlay δεν πιάνει touches — μόνο τα χειριστήρια — ώστε τα
+     drags στο κενό να φτάνουν στο canvas για το βλέμμα. */
+  #touch-controls { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  #touch-controls.hidden { display: none; }
+  #joy-base {
+    position: absolute; left: 30px; bottom: 30px;
+    width: 140px; height: 140px; border-radius: 50%;
+    background: rgba(216, 207, 158, 0.08);
+    border: 2px solid rgba(216, 207, 158, 0.3);
+    touch-action: none; pointer-events: auto;
+  }
+  #joy-stick {
+    position: absolute; left: 50%; top: 50%;
+    width: 60px; height: 60px; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(216, 207, 158, 0.35);
+    border: 2px solid rgba(216, 207, 158, 0.6);
+    pointer-events: none;
+  }
+  #run-btn {
+    position: absolute; right: 34px; bottom: 46px;
+    width: 96px; height: 96px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; letter-spacing: 0.15em; color: #d8cf9e;
+    background: rgba(216, 207, 158, 0.08);
+    border: 2px solid rgba(216, 207, 158, 0.3);
+    touch-action: none; user-select: none; pointer-events: auto;
+  }
+  #run-btn.active { background: rgba(216, 207, 158, 0.3); }
+  #pause-btn {
+    position: absolute; right: 18px; top: 18px; z-index: 7;
+    width: 42px; height: 42px; padding: 0; font-size: 20px;
+    letter-spacing: 0; line-height: 1;
+    border: 1px solid rgba(216, 207, 158, 0.4);
+    background: rgba(8, 7, 2, 0.5); color: #d8cf9e;
+  }
+  #pause-btn.hidden { display: none; }
 
   /* Vignette παραφροσύνης */
   #vignette {
@@ -119,6 +162,8 @@
 
   <div id="grain"></div>
   <div id="vignette"></div>
+
+  <button id="pause-btn" class="hidden" aria-label="Παύση">II</button>
 
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
@@ -177,6 +222,7 @@
   <script src="js/audio.js"></script>
   <script src="js/world.js"></script>
   <script src="js/entity.js"></script>
+  <script src="js/touch.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

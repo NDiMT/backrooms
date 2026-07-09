@@ -1,0 +1,11 @@
+{
+  "appId": "gr.happyonline.backrooms",
+  "appName": "The Backrooms",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,8 @@
+# Generated / εξαρτήσεις
+node_modules/
+www/
+android/
+
+# OS / editor
+.DS_Store
+*.log

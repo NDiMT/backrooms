@@ -1,0 +1,17 @@
+{
+  "name": "backrooms-level0",
+  "version": "1.0.0",
+  "description": "The Backrooms — Level 0, ένα liminal space horror παιχνίδι στον browser / Android",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-www.js",
+    "sync": "npm run build && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
