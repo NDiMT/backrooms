@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..');
 const dest = path.join(root, 'www');
 
 const ENTRIES = ['index.html', 'js'];
+const OPTIONAL = ['assets']; // PNG overrides για τα γραφικά, αν υπάρχουν
 
 function rmrf(p) {
   if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
@@ -32,6 +33,10 @@ for (const e of ENTRIES) {
     process.exit(1);
   }
   copy(src, path.join(dest, e));
+}
+for (const e of OPTIONAL) {
+  const src = path.join(root, e);
+  if (fs.existsSync(src)) copy(src, path.join(dest, e));
 }
 
 console.log('www/ έτοιμο:', ENTRIES.join(', '));

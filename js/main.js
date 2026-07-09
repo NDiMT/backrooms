@@ -1,328 +1,573 @@
-/* THE BACKROOMS — Level 0
-   Κύριος βρόχος παιχνιδιού, controls, HUD, καταστάσεις. */
+/* ΝΕΚΡΗ ΖΩΝΗ — Κύριος βρόχος, καταστάσεις παιχνιδιού, input, run manager. */
 
 (() => {
-  // ---------- seed ----------
-  const params = new URLSearchParams(location.search);
-  let seed = parseInt(params.get('seed'), 10);
-  if (!Number.isFinite(seed)) seed = Math.floor(Math.random() * 0xffffffff);
-
-  // ---------- σκηνή ----------
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x151109, 0.055);
-
-  const camera = new THREE.PerspectiveCamera(
-    75, window.innerWidth / window.innerHeight, 0.1, 250);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  document.getElementById('game').appendChild(renderer.domElement);
-
-  const AMBIENT_BASE = 0.8, POINT_BASE = 0.9;
-  const ambient = new THREE.AmbientLight(0xa89a68, AMBIENT_BASE);
-  scene.add(ambient);
-  const lamp = new THREE.PointLight(0xffefc0, POINT_BASE, 22);
-  scene.add(lamp);
-
-  // ---------- κόσμος ----------
-  const data = World.generate(seed);
-  const built = World.build(scene, data);
-  const entity = new Entity(scene, World, data);
-
-  const EYE = 1.65;
-  const spawn = World.cellToWorld(data.mid, data.mid);
-  const player = {
-    x: spawn.x, z: spawn.z,
-    yaw: Math.random() * Math.PI * 2, pitch: 0,
-    stamina: 100, sanity: 100,
-  };
-
-  // ---------- DOM ----------
   const $ = id => document.getElementById(id);
-  const menuEl = $('menu'), pauseEl = $('pause'), deadEl = $('dead'),
-        winEl = $('win'), hudEl = $('hud'), msgEl = $('message'),
-        vignetteEl = $('vignette'), scareEl = $('jumpscare'),
-        staminaBar = $('stamina-fill'), sanityBar = $('sanity-fill');
+  const canvas = $('screen');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
 
-  $('jumpscare-img').src = Textures.jumpscareFace();
+  const W = Engine.W, H = Engine.H;
+
+  // ---------- κλιμάκωση canvas ----------
+  function fitCanvas() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const scale = Math.min(vw / W, vh / H);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+    // προτροπή landscape σε κινητά
+    if (TouchControls.isTouch) {
+      $('rotate-prompt').classList.toggle('hidden', vw >= vh);
+    } else {
+      $('rotate-prompt').classList.add('hidden');
+    }
+  }
+  window.addEventListener('resize', fitCanvas);
+  window.addEventListener('orientationchange', fitCanvas);
+  fitCanvas();
+
+  // ---------- θέματα deck ----------
+  const THEMES = [
+    { idx: 0, floor: '#2c3444', ceil: '#1a202c' },
+    { idx: 1, floor: '#3a2820', ceil: '#221610' },
+    { idx: 2, floor: '#243428', ceil: '#141f16' },
+    { idx: 3, floor: '#231b30', ceil: '#120d1c' },
+  ];
 
   // ---------- κατάσταση ----------
-  let state = 'MENU'; // MENU | PLAYING | PAUSED | DEAD | WIN
-  let elapsed = 0, bottlesFound = 0;
+  let state = 'MENU';   // MENU|PLAY|PAUSE|PERK|SHOP|DEAD|WIN|META
+  let meta = Rogue.loadMeta();
+
+  const game = {
+    audio: GameAudio,
+    player: null,
+    world: null,
+    enemies: [],
+    projectiles: [],
+    pickups: [],
+    deckIdx: 0,
+    seed: 0,
+    rand: Math.random,
+    kills: 0,
+    scrapEarned: 0,
+    startTime: 0,
+    elapsed: 0,
+    wardenDead: false,
+    showMap: false,
+    shakeT: 0,
+
+    shake(t) { this.shakeT = Math.max(this.shakeT, t); },
+
+    alertEnemies(x, y, r) {
+      for (const e of this.enemies) {
+        if (e.state === 'idle' &&
+            Math.hypot(e.x - x, e.y - y) < r) e.state = 'chase';
+      }
+    },
+
+    registerHit(e, dmg) {
+      const wasElite = e.stats.elite || e.stats.boss;
+      const died = e.hurt(dmg, this);
+      GameAudio.hitMarker();
+      if (!died && wasElite) { /* τα αφεντικά δεν κάνουν stagger εύκολα */ }
+    },
+
+    onEnemyDeath(e) {
+      this.kills++;
+      const p = this.player;
+      if (p.perks.vamp) p.hp = Math.min(p.maxHp, p.hp + p.perks.vamp);
+
+      // scrap drops
+      const amount = Math.round(e.stats.scrap * p.perks.scrapMul);
+      if (amount > 0) {
+        const pieces = e.stats.elite ? 4 : 2;
+        for (let i = 0; i < pieces; i++) {
+          const pk = new Entities.Pickup('scrap',
+            e.x + (Math.random() - 0.5) * 0.7,
+            e.y + (Math.random() - 0.5) * 0.7);
+          pk.value = Math.ceil(amount / pieces);
+          this.pickups.push(pk);
+        }
+      }
+      if (!e.stats.boss && !e.stats.elite && Math.random() < 0.08) {
+        this.pickups.push(new Entities.Pickup('medkit', e.x, e.y));
+      }
+
+      if (e.type === 'warden') {
+        this.wardenDead = true;
+        openElevator();
+        showMessage('Ο ΦΡΟΥΡΟΣ ΕΠΕΣΕ — ΤΟ ΑΣΑΝΣΕΡ ΑΝΟΙΞΕ. Ψάξε το πράσινο σήμα.', 5000);
+        GameAudio.elevator();
+      }
+      if (e.type === 'boss') {
+        setTimeout(() => winRun(), 900);
+      }
+    },
+
+    hurtPlayer(amount, source) {
+      if (state !== 'PLAY') return;
+      const dead = PlayerSys.damage(this.player, amount);
+      HUD.notifyPain();
+      GameAudio.playerPain();
+      this.shake(0.25);
+      flashDamage();
+      if (dead) dieRun();
+    },
+  };
+
+  // ---------- μηνύματα / εφέ ----------
   let msgTimer = null;
-
-  function showMessage(text, ms = 3500) {
-    msgEl.textContent = text;
-    msgEl.style.opacity = 1;
+  function showMessage(text, ms = 3000) {
+    const el = $('message');
+    el.textContent = text;
+    el.style.opacity = 1;
     clearTimeout(msgTimer);
-    msgTimer = setTimeout(() => { msgEl.style.opacity = 0; }, ms);
+    msgTimer = setTimeout(() => { el.style.opacity = 0; }, ms);
+  }
+  function flashDamage() {
+    const el = $('damage-flash');
+    el.style.opacity = 1;
+    setTimeout(() => { el.style.opacity = 0; }, 120);
   }
 
-  function formatTime(s) {
-    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-    return `${m}:${String(sec).padStart(2, '0')}`;
+  // ---------- run / decks ----------
+  function newRun() {
+    meta.runs++;
+    Rogue.saveMeta(meta);
+    game.seed = Math.floor(Math.random() * 0xffffffff);
+    game.deckIdx = 0;
+    game.kills = 0;
+    game.scrapEarned = 0;
+    game.elapsed = 0;
+    game.player = PlayerSys.create(meta);
+    loadDeck();
+    setState('PLAY');
+    showMessage('ΚΛΩΝΟΣ #' + meta.runs + ' ΕΝΕΡΓΟΣ. Βρες και σκότωσε τον Φρουρό του deck.', 4500);
   }
 
-  // ---------- controls ----------
-  const keys = {};
-  document.addEventListener('keydown', e => { keys[e.code] = true; });
-  document.addEventListener('keyup', e => { keys[e.code] = false; });
+  function loadDeck() {
+    const world = Procgen.generate(game.seed, game.deckIdx);
+    game.world = world;
+    game.player.x = world.playerStart.x;
+    game.player.y = world.playerStart.y;
+    game.player.angle = Math.random() * Math.PI * 2;
+    game.enemies = world.spawns.map(s => new Entities.Enemy(s.type, s.x, s.y));
+    game.projectiles = [];
+    game.pickups = world.pickups.map(p => new Entities.Pickup(p.kind, p.x, p.y));
+    game.wardenDead = false;
+    $('objective').textContent = Rogue.DECK_NAMES[game.deckIdx] +
+      (game.deckIdx === 3 ? ' — ΚΑΤΑΣΤΡΕΨΕ ΤΟΝ ΩΡΙΩΝ' : ' — ΣΚΟΤΩΣΕ ΤΟΝ ΦΡΟΥΡΟ');
+    if (game.deckIdx === 3) GameAudio.bossRoar();
+  }
 
-  const canvas = renderer.domElement;
-
-  function lock() { canvas.requestPointerLock(); }
-
-  document.addEventListener('pointerlockchange', () => {
-    // Στα touch δεν χρησιμοποιούμε pointer lock — μην κάνεις auto-pause.
-    if (TouchControls.isTouch) return;
-    const locked = document.pointerLockElement === canvas;
-    if (!locked && state === 'PLAYING') {
-      state = 'PAUSED';
-      pauseEl.classList.remove('hidden');
-      hudEl.classList.add('hidden');
-      TouchControls.hide();
+  function openElevator() {
+    for (const [, d] of game.world.doors) {
+      if (d.elevator) d.target = 1;
     }
-  });
+  }
 
-  document.addEventListener('mousemove', e => {
-    if (document.pointerLockElement !== canvas || state !== 'PLAYING') return;
-    player.yaw -= e.movementX * 0.0022;
-    player.pitch -= e.movementY * 0.0022;
-    const lim = Math.PI / 2 - 0.08;
-    player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
-  });
+  function nextDeck() {
+    game.deckIdx++;
+    GameAudio.elevator();
+    // επιλογή perk πριν το επόμενο deck
+    const perks = Rogue.pickPerks(Math.random);
+    const holder = $('perk-cards');
+    holder.innerHTML = '';
+    for (const perk of perks) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<h3>${perk.name}</h3><p>${perk.desc}</p>`;
+      card.addEventListener('click', () => {
+        perk.apply(game.player);
+        GameAudio.perk();
+        loadDeck();
+        setState('PLAY');
+        showMessage(Rogue.DECK_NAMES[game.deckIdx], 3500);
+      });
+      holder.appendChild(card);
+    }
+    setState('PERK');
+  }
 
-  function startGame() {
-    GameAudio.start();
-    menuEl.classList.add('hidden');
-    pauseEl.classList.add('hidden');
-    hudEl.classList.remove('hidden');
-    state = 'PLAYING';
-    if (TouchControls.isTouch) {
+  function dieRun() {
+    GameAudio.playerDie();
+    const run = { deckIdx: game.deckIdx, kills: game.kills, won: false };
+    const cores = Rogue.coresEarned(run);
+    meta.cores += cores;
+    meta.bestDeck = Math.max(meta.bestDeck, game.deckIdx + 1);
+    Rogue.saveMeta(meta);
+    $('death-stats').innerHTML =
+      `Έφτασες: ${Rogue.DECK_NAMES[game.deckIdx]}<br>` +
+      `Σκοτωμοί: ${game.kills} · Scrap που μαζεύτηκε: ${game.scrapEarned} · ` +
+      `Χρόνος: ${fmtTime(game.elapsed)}<br>Seed: ${game.seed}`;
+    $('death-cores').textContent = cores;
+    renderMetaCards($('meta-cards-dead'));
+    setState('DEAD');
+  }
+
+  function winRun() {
+    GameAudio.win();
+    const run = { deckIdx: game.deckIdx, kills: game.kills, won: true };
+    const cores = Rogue.coresEarned(run);
+    meta.cores += cores;
+    meta.wins++;
+    meta.bestDeck = 4;
+    Rogue.saveMeta(meta);
+    $('win-stats').innerHTML =
+      `Σκοτωμοί: ${game.kills} · Χρόνος: ${fmtTime(game.elapsed)} · Seed: ${game.seed}`;
+    $('win-cores').textContent = cores;
+    setState('WIN');
+  }
+
+  function fmtTime(s) {
+    return `${(s / 60) | 0}:${String((s | 0) % 60).padStart(2, '0')}`;
+  }
+
+  // ---------- meta shop ----------
+  function renderMetaCards(holder) {
+    holder.innerHTML = '';
+    $('meta-cores') && ($('meta-cores').textContent = meta.cores);
+    for (const up of Rogue.META_UPGRADES) {
+      const lvl = meta.upgrades[up.id] || 0;
+      const maxed = lvl >= up.max;
+      const cost = maxed ? null : up.cost(lvl);
+      const card = document.createElement('div');
+      card.className = 'card' + ((maxed || cost > meta.cores) ? ' disabled' : '');
+      card.innerHTML = `<h3>${up.name} ${up.max > 1 ? `(${lvl}/${up.max})` : (lvl ? '✓' : '')}</h3>
+        <p>${up.desc}</p>
+        <span class="cost">${maxed ? 'ΜΕΓΙΣΤΟ' : cost + ' ΠΥΡΗΝΕΣ'}</span>`;
+      if (!maxed && cost <= meta.cores) {
+        card.addEventListener('click', () => {
+          meta.cores -= cost;
+          meta.upgrades[up.id] = lvl + 1;
+          Rogue.saveMeta(meta);
+          GameAudio.perk();
+          renderMetaCards(holder);
+          if (holder.id === 'meta-cards-dead') $('death-cores').textContent = '0';
+        });
+      }
+      holder.appendChild(card);
+    }
+  }
+
+  // ---------- shop τερματικού ----------
+  let nearTerminal = false;
+  function renderShop() {
+    $('shop-scrap').textContent = game.player.scrap;
+    const holder = $('shop-cards');
+    holder.innerHTML = '';
+    for (const item of Rogue.SHOP_ITEMS) {
+      const usable = item.can(game.player);
+      const affordable = game.player.scrap >= item.cost;
+      const card = document.createElement('div');
+      card.className = 'card' + ((!usable || !affordable) ? ' disabled' : '');
+      card.innerHTML = `<h3>${item.name}</h3><p>${item.desc}</p>
+        <span class="cost">${item.cost} SCRAP</span>`;
+      if (usable && affordable) {
+        card.addEventListener('click', () => {
+          game.player.scrap -= item.cost;
+          item.apply(game.player);
+          GameAudio.pickup();
+          renderShop();
+        });
+      }
+      holder.appendChild(card);
+    }
+  }
+
+  // ---------- καταστάσεις / overlays ----------
+  const OVERLAYS = ['menu', 'pause', 'perk', 'shop', 'dead', 'win', 'meta'];
+  function setState(s) {
+    state = s;
+    for (const id of OVERLAYS) $(id).classList.add('hidden');
+    const map = { MENU: 'menu', PAUSE: 'pause', PERK: 'perk',
+                  SHOP: 'shop', DEAD: 'dead', WIN: 'win', META: 'meta' };
+    if (map[s]) $(map[s]).classList.remove('hidden');
+
+    const playing = s === 'PLAY';
+    $('objective').classList.toggle('hidden', !playing);
+    if (playing && TouchControls.isTouch) {
       TouchControls.show();
       $('pause-btn').classList.remove('hidden');
     } else {
-      lock();
+      TouchControls.hide();
+      $('pause-btn').classList.add('hidden');
     }
-    if (elapsed === 0) {
-      showMessage('Έκανες noclip έξω από την πραγματικότητα. Βρες την έξοδο.', 5000);
-    }
-  }
-
-  function pauseGame() {
-    if (state !== 'PLAYING') return;
-    state = 'PAUSED';
-    pauseEl.classList.remove('hidden');
-    hudEl.classList.add('hidden');
-    TouchControls.hide();
-    $('pause-btn').classList.add('hidden');
-    if (!TouchControls.isTouch) document.exitPointerLock();
-  }
-
-  $('start-btn').addEventListener('click', startGame);
-  $('resume-btn').addEventListener('click', startGame);
-  $('pause-btn').addEventListener('click', pauseGame);
-  const restart = () => { location.href = '?seed=' + Math.floor(Math.random() * 0xffffffff); };
-  $('retry-btn').addEventListener('click', restart);
-  $('again-btn').addEventListener('click', restart);
-
-  // ---------- flicker των φώτων ----------
-  let flickerTimer = 4 + Math.random() * 8;
-  let flickerLeft = 0;
-  let dim = 0;
-
-  function updateFlicker(dt) {
-    if (flickerLeft > 0) {
-      flickerLeft -= dt;
-      dim = 0.3 + Math.random() * 0.6;
-      if (flickerLeft <= 0) {
-        dim = 0;
-        flickerTimer = 6 + Math.random() * 9;
+    if (!TouchControls.isTouch) {
+      if (playing) {
+        canvas.requestPointerLock && canvas.requestPointerLock();
+      } else if (document.pointerLockElement === canvas) {
+        // αλλιώς το lock «ρουφάει» τα clicks των overlays
+        document.exitPointerLock();
       }
-    } else {
-      flickerTimer -= dt;
-      if (flickerTimer <= 0) flickerLeft = 0.3 + Math.random() * 1.3;
     }
-    ambient.intensity = AMBIENT_BASE * (1 - dim * 0.85);
-    lamp.intensity = POINT_BASE * (1 - dim * 0.85);
-    const c = 1 - dim * 0.9;
-    built.ceilMat.color.setRGB(c, c, c);
-    GameAudio.setFlicker(dim);
+    if (!playing) $('shop-prompt').classList.add('hidden');
   }
 
-  // ---------- θάνατος / νίκη ----------
-  function die(reason, withScare) {
-    state = 'DEAD';
-    hudEl.classList.add('hidden');
-    TouchControls.hide();
-    $('pause-btn').classList.add('hidden');
-    if (!TouchControls.isTouch) document.exitPointerLock();
-    $('death-reason').textContent = reason;
-    $('death-stats').textContent =
-      `Άντεξες ${formatTime(elapsed)} · Almond water: ${bottlesFound}/6 · Seed: ${seed}`;
-    GameAudio.setChase(false);
-    GameAudio.setEntityProximity(0);
-    if (withScare) {
-      GameAudio.jumpscare();
-      scareEl.classList.remove('hidden');
-      setTimeout(() => {
-        scareEl.classList.add('hidden');
-        deadEl.classList.remove('hidden');
-      }, 900);
-    } else {
-      deadEl.classList.remove('hidden');
+  // ---------- input ----------
+  const keys = {};
+  let mouseDown = false;
+
+  document.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (state !== 'PLAY') return;
+    if (e.code === 'Tab') { e.preventDefault(); game.showMap = !game.showMap; }
+    if (e.code === 'KeyQ') PlayerSys.nextWeapon(game.player, game);
+    if (e.code === 'KeyE' && nearTerminal) { renderShop(); setState('SHOP'); }
+    const idx = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
+    if (idx >= 0) PlayerSys.switchWeapon(game.player, PlayerSys.WEAPON_ORDER[idx], game);
+  });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  document.addEventListener('mousemove', e => {
+    if (state !== 'PLAY' || TouchControls.isTouch) return;
+    if (document.pointerLockElement !== canvas) return;
+    game.player.angle += e.movementX * 0.0028;
+  });
+  canvas.addEventListener('mousedown', () => {
+    if (state === 'PLAY' && !TouchControls.isTouch &&
+        document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock();
     }
+    mouseDown = true;
+  });
+  document.addEventListener('mouseup', () => { mouseDown = false; });
+
+  document.addEventListener('pointerlockchange', () => {
+    if (TouchControls.isTouch) return;
+    if (document.pointerLockElement !== canvas && state === 'PLAY') {
+      setState('PAUSE');
+    }
+  });
+
+  TouchControls.onWeaponSwitch = () => {
+    if (state === 'PLAY') PlayerSys.nextWeapon(game.player, game);
+  };
+  TouchControls.onMapToggle = () => { game.showMap = !game.showMap; };
+
+  // κουμπιά UI
+  $('start-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
+  $('resume-btn').addEventListener('click', () => setState('PLAY'));
+  $('quit-btn').addEventListener('click', () => setState('MENU'));
+  $('pause-btn').addEventListener('click', () => { if (state === 'PLAY') setState('PAUSE'); });
+  $('retry-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
+  $('win-again-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
+  $('meta-btn').addEventListener('click', () => {
+    renderMetaCards($('meta-cards'));
+    setState('META');
+  });
+  $('meta-close-btn').addEventListener('click', () => setState('MENU'));
+  $('shop-open-btn').addEventListener('click', () => {
+    renderShop();
+    setState('SHOP');
+  });
+  $('shop-close-btn').addEventListener('click', () => setState('PLAY'));
+
+  if (TouchControls.isTouch) {
+    $('hint-desktop').classList.add('hidden');
+    $('hint-touch').classList.remove('hidden');
+    $('shop-key-hint').style.display = 'none';
   }
+  $('clone-no').textContent = meta.runs + 1;
 
-  function winGame() {
-    state = 'WIN';
-    hudEl.classList.add('hidden');
-    TouchControls.hide();
-    $('pause-btn').classList.add('hidden');
-    if (!TouchControls.isTouch) document.exitPointerLock();
-    $('win-stats').textContent =
-      `Χρόνος: ${formatTime(elapsed)} · Almond water: ${bottlesFound}/6 · Seed: ${seed}`;
-    GameAudio.setChase(false);
-    GameAudio.setEntityProximity(0);
-    GameAudio.setExitProximity(0);
-    GameAudio.win();
-    winEl.classList.remove('hidden');
-  }
-
-  // ---------- κύριος βρόχος ----------
-  const clock = new THREE.Clock();
-  let bobPhase = 0, stepAcc = 0;
-  let saidExitHint = false;
-
+  // ---------- update ----------
   function update(dt) {
-    elapsed += dt;
+    const p = game.player;
+    game.elapsed += dt;
 
-    // βλέμμα από touch (drag)
-    if (TouchControls.isTouch) {
-      const look = TouchControls.consumeLook();
-      player.yaw -= look.dx * 0.0042;
-      player.pitch -= look.dy * 0.0042;
-      const lim = Math.PI / 2 - 0.08;
-      player.pitch = Math.max(-lim, Math.min(lim, player.pitch));
-    }
-
-    // κίνηση
+    // --- κίνηση ---
     let mx = 0, mz = 0;
     if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
     if (keys['KeyS'] || keys['ArrowDown']) mz -= 1;
-    if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
-    if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+    if (keys['KeyA']) mx -= 1;
+    if (keys['KeyD']) mx += 1;
+    if (keys['ArrowLeft']) p.angle -= 2.4 * dt;
+    if (keys['ArrowRight']) p.angle += 2.4 * dt;
     mx += TouchControls.state.move.x;
     mz += TouchControls.state.move.z;
     mx = Math.max(-1, Math.min(1, mx));
     mz = Math.max(-1, Math.min(1, mz));
+
+    // στροφή από touch drag
+    if (TouchControls.isTouch) {
+      p.angle += TouchControls.consumeLook() * 0.006;
+    }
+
+    const speed = 3.4 * p.perks.speedMul;
     const moving = Math.abs(mx) > 0.05 || Math.abs(mz) > 0.05;
-
-    const wantsRun =
-      ((keys['ShiftLeft'] || keys['ShiftRight']) || TouchControls.state.running) && moving;
-    const running = wantsRun && player.stamina > 0;
-    if (running) player.stamina = Math.max(0, player.stamina - 24 * dt);
-    else player.stamina = Math.min(100, player.stamina + 13 * dt);
-
-    const speed = running ? 5.8 : 3.6;
     if (moving) {
-      const len = Math.hypot(mx, mz);
-      const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
-      const rx = -fz, rz = fx;
-      const dx = (fx * mz / len + rx * mx / len) * speed * dt;
-      const dz = (fz * mz / len + rz * mx / len) * speed * dt;
-      if (!World.collides(data.grid, player.x + dx, player.z, 0.45)) player.x += dx;
-      if (!World.collides(data.grid, player.x, player.z + dz, 0.45)) player.z += dz;
+      const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
+      const rx = -fy, ry = fx;
+      const len = Math.max(1, Math.hypot(mx, mz));
+      Procgen.move(game.world, p,
+        (fx * mz + rx * mx) / len * speed * dt,
+        (fy * mz + ry * mx) / len * speed * dt, p.radius);
+      p.bob += dt * 9;
+    }
 
-      bobPhase += speed * dt * 1.8;
-      stepAcc += speed * dt;
-      const stride = running ? 2.6 : 2.1;
-      if (stepAcc > stride) {
-        stepAcc = 0;
-        GameAudio.footstep(running);
+    // --- πυρ ---
+    p.cool = Math.max(0, p.cool - dt);
+    p.fireAnim = Math.max(0, p.fireAnim - dt);
+    const wantFire = mouseDown || keys['Space'] || TouchControls.state.firing;
+    if (wantFire) {
+      PlayerSys.fire(p, game, TouchControls.isTouch ? 0.06 : 0);
+    }
+
+    // --- πόρτες: αυτόματο άνοιγμα κοντά, κλείσιμο μετά ---
+    for (const [key, d] of game.world.doors) {
+      const [dx, dy] = key.split(',').map(Number);
+      const near = Math.hypot(p.x - dx - 0.5, p.y - dy - 0.5) < 1.4;
+      if (!d.elevator) {
+        if (near) { if (d.target === 0) GameAudio.doorOpen(); d.target = 1; d.timer = 3; }
+        else if (d.timer > 0) { d.timer -= dt; if (d.timer <= 0) d.target = 0; }
+      }
+      d.open += Math.sign(d.target - d.open) * dt * 1.8;
+      d.open = Math.max(0, Math.min(1, d.open));
+    }
+
+    // --- ασανσέρ: μετάβαση ---
+    if (game.world.elevator && game.wardenDead) {
+      const el = game.world.elevator;
+      if (Math.hypot(p.x - el.x, p.y - el.y) < 0.7) {
+        nextDeck();
+        return;
       }
     }
 
-    camera.position.set(
-      player.x,
-      EYE + (moving ? Math.sin(bobPhase) * 0.045 : 0),
-      player.z);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y = player.yaw;
-    camera.rotation.x = player.pitch;
-    lamp.position.set(player.x, EYE + 0.3, player.z);
+    // --- εχθροί / projectiles ---
+    for (const e of game.enemies) e.update(dt, game);
+    if (state !== 'PLAY') return; // πέθανε ο παίκτης μέσα στο update των εχθρών
+    for (const pr of game.projectiles) pr.update(dt, game);
+    game.projectiles = game.projectiles.filter(pr => !pr.dead);
 
-    updateFlicker(dt);
-
-    // entity
-    const st = entity.update(dt, player.x, player.z);
-    GameAudio.setEntityProximity(Math.max(0, 1 - st.dist / 25));
-    GameAudio.setChase(st.chasing);
-    if (st.caught) { die('Σε βρήκε.', true); return; }
-
-    // sanity
-    let drain = 0.35;
-    if (st.chasing) drain += 2.2;
-    if (dim > 0.4) drain += 0.9;
-    player.sanity = Math.max(0, player.sanity - drain * dt);
-    if (player.sanity <= 0) {
-      die('Το μυαλό σου έγινε ένα με τους τοίχους.', false);
-      return;
+    // --- pickups ---
+    for (const pk of game.pickups) {
+      if (pk.taken) continue;
+      pk.bob += dt * 3;
+      if (Math.hypot(pk.x - p.x, pk.y - p.y) > 0.55) continue;
+      pk.taken = true;
+      applyPickup(pk);
     }
+    game.pickups = game.pickups.filter(pk => !pk.taken);
 
-    // almond water
-    for (let i = built.bottles.length - 1; i >= 0; i--) {
-      const b = built.bottles[i];
-      b.rotation.y += dt * 1.2;
-      b.position.y = b.userData.baseY + Math.sin(elapsed * 2 + i) * 0.06;
-      const d = Math.hypot(b.position.x - player.x, b.position.z - player.z);
-      if (d < 1.3) {
-        scene.remove(b);
-        built.bottles.splice(i, 1);
-        bottlesFound++;
-        player.sanity = Math.min(100, player.sanity + 40);
-        GameAudio.pickup();
-        showMessage('Almond water. Το μυαλό σου καθαρίζει.');
-      }
-    }
+    // --- τερματικά ---
+    nearTerminal = game.world.terminals.some(t =>
+      Math.hypot(t.x - p.x, t.y - p.y) < 1.3);
+    $('shop-prompt').classList.toggle('hidden', !nearTerminal);
 
-    // έξοδος
-    const ed = Math.hypot(built.exitPos.x - player.x, built.exitPos.z - player.z);
-    GameAudio.setExitProximity(Math.max(0, 1 - ed / 18));
-    if (ed < 22 && !saidExitHint) {
-      saidExitHint = true;
-      showMessage('Ακούς κάτι… σαν έξοδο.');
-    }
-    if (ed < 1.5) { winGame(); return; }
-
-    // HUD
-    staminaBar.style.width = player.stamina + '%';
-    sanityBar.style.width = player.sanity + '%';
-    vignetteEl.style.opacity = (1 - player.sanity / 100) * 0.85;
+    game.shakeT = Math.max(0, game.shakeT - dt);
   }
 
-  function loop() {
+  function applyPickup(pk) {
+    const p = game.player;
+    switch (pk.kind) {
+      case 'medkit':
+        if (p.hp >= p.maxHp) { pk.taken = false; return; }
+        p.hp = Math.min(p.maxHp, p.hp + 35);
+        break;
+      case 'shells': p.ammo.shells += 8; break;
+      case 'cells': p.ammo.cells += 20; break;
+      case 'scrap': {
+        const v = pk.value || 5;
+        p.scrap += v;
+        game.scrapEarned += v;
+        GameAudio.scrapPickup();
+        return;
+      }
+      case 'wShotgun':
+        if (!p.weapons.includes('shotgun')) p.weapons.push('shotgun');
+        p.ammo.shells += 10;
+        PlayerSys.switchWeapon(p, 'shotgun');
+        GameAudio.weaponPickup();
+        HUD.notifyPickup();
+        showMessage('ΚΑΡΑΜΠΙΝΑ!', 2500);
+        return;
+      case 'wRifle':
+        if (!p.weapons.includes('rifle')) p.weapons.push('rifle');
+        p.ammo.cells += 30;
+        PlayerSys.switchWeapon(p, 'rifle');
+        GameAudio.weaponPickup();
+        HUD.notifyPickup();
+        showMessage('PULSE RIFLE!', 2500);
+        return;
+      case 'wLauncher':
+        if (!p.weapons.includes('launcher')) p.weapons.push('launcher');
+        p.ammo.cells += 16;
+        GameAudio.weaponPickup();
+        HUD.notifyPickup();
+        showMessage('PLASMA LAUNCHER!', 2500);
+        return;
+    }
+    GameAudio.pickup();
+    HUD.notifyPickup();
+    const msg = Entities.PICKUP_DEFS[pk.kind].msg;
+    if (msg) showMessage(msg, 1600);
+  }
+
+  // ---------- render ----------
+  let tick = 0;
+  function render(dt) {
+    tick += dt;
+    ctx.save();
+    if (game.shakeT > 0) {
+      ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3);
+    }
+
+    const theme = THEMES[game.deckIdx];
+    const sprites = [];
+
+    for (const e of game.enemies) {
+      sprites.push({
+        x: e.x, y: e.y, img: e.sprite(tick),
+        worldH: e.state === 'dead' || e.state === 'dying'
+          ? e.stats.worldH * 0.5 : e.stats.worldH,
+        yOff: e.stats.fly || 0,
+        flash: e.flash > 0,
+      });
+    }
+    for (const pk of game.pickups) {
+      sprites.push({
+        x: pk.x, y: pk.y, img: pk.sprite(),
+        worldH: pk.def.worldH,
+        yOff: 0.05 + Math.sin(pk.bob) * 0.03,
+        bright: pk.kind === 'scrap' || pk.kind === 'core',
+      });
+    }
+    for (const pr of game.projectiles) {
+      sprites.push({ x: pr.x, y: pr.y, img: pr.sprite(),
+                     worldH: 0.14, yOff: 0.4, bright: true });
+    }
+    for (const t of game.world.terminals) {
+      sprites.push({ x: t.x, y: t.y, img: Assets.props.terminal, worldH: 0.62 });
+    }
+
+    Engine.render(ctx, game.world, game.player, sprites, theme, tick);
+    HUD.weapon(ctx, game);
+    HUD.render(ctx, game, dt);
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function loop(now) {
     requestAnimationFrame(loop);
-    const dt = Math.min(clock.getDelta(), 0.05);
-    if (state === 'PLAYING') update(dt);
-    renderer.render(scene, camera);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (state === 'PLAY') {
+      update(dt);
+      render(dt);
+    } else if (state === 'MENU' || state === 'META') {
+      // στατικό σκοτεινό background στο μενού
+      ctx.fillStyle = '#06080c';
+      ctx.fillRect(0, 0, W, H);
+    }
   }
+  requestAnimationFrame(loop);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // debug hook (χρησιμοποιείται από τα smoke tests)
-  window.__debug = { player, entity, built, data, seed };
-
-  // αρχική θέση κάμερας για το background του μενού
-  camera.position.set(player.x, EYE, player.z);
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y = player.yaw;
-  lamp.position.set(player.x, EYE + 0.3, player.z);
-
-  loop();
+  // ---------- debug hook (για τα smoke tests) ----------
+  window.__debug = {
+    game, meta,
+    get state() { return state; },
+    setState, newRun, nextDeck, dieRun, winRun,
+    PlayerSys, Rogue, Procgen, Engine,
+  };
 })();

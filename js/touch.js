@@ -1,6 +1,5 @@
-/* Touch controls για κινητά / APK.
-   Αριστερή πλευρά: virtual joystick (κίνηση). Δεξιά: drag για βλέμμα.
-   Εκθέτει move {x,z}, ένα look delta που «καταναλώνεται» ανά frame, και running. */
+/* ΝΕΚΡΗ ΖΩΝΗ — Mobile controls: joystick κίνησης (αριστερά), drag στροφής
+   (δεξιά), κουμπί FIRE (κρατημένο = συνεχόμενες βολές), εναλλαγή όπλου. */
 
 const TouchControls = (() => {
   const isTouch = matchMedia('(pointer: coarse)').matches ||
@@ -8,16 +7,16 @@ const TouchControls = (() => {
 
   const state = {
     isTouch,
-    move: { x: 0, z: 0 },
+    move: { x: 0, z: 0 },   // x: strafe, z: εμπρός/πίσω
     lookDX: 0,
-    lookDY: 0,
-    running: false,
+    firing: false,
   };
 
-  let joyBase, joyStick, runBtn, root;
+  let root, joyBase, joyStick, fireBtn, wpnBtn, mapBtn;
   let joyTouchId = null, joyCenter = { x: 0, y: 0 };
-  let lookTouchId = null, lookLast = { x: 0, y: 0 };
-  const JOY_RADIUS = 60;
+  let lookTouchId = null, lookLastX = 0;
+  const JOY_RADIUS = 52;
+  let onWeaponSwitch = null, onMapToggle = null;
 
   function build() {
     document.body.classList.add('touch-mode');
@@ -26,16 +25,18 @@ const TouchControls = (() => {
     root.className = 'hidden';
     root.innerHTML = `
       <div id="joy-base"><div id="joy-stick"></div></div>
-      <div id="run-btn">ΤΡΕΞΕ</div>
+      <div id="fire-btn">ΠΥΡ</div>
+      <div id="wpn-btn">ΟΠΛΟ</div>
+      <div id="map-btn">MAP</div>
     `;
     document.body.appendChild(root);
     joyBase = document.getElementById('joy-base');
     joyStick = document.getElementById('joy-stick');
-    runBtn = document.getElementById('run-btn');
+    fireBtn = document.getElementById('fire-btn');
+    wpnBtn = document.getElementById('wpn-btn');
+    mapBtn = document.getElementById('map-btn');
 
-    // Το δεξί μισό της οθόνης = look pad (όλη η σκηνή εκτός των controls)
     const lookPad = document.getElementById('game');
-
     lookPad.addEventListener('touchstart', onLookStart, { passive: false });
     lookPad.addEventListener('touchmove', onLookMove, { passive: false });
     lookPad.addEventListener('touchend', onLookEnd);
@@ -46,12 +47,23 @@ const TouchControls = (() => {
     joyBase.addEventListener('touchend', onJoyEnd);
     joyBase.addEventListener('touchcancel', onJoyEnd);
 
-    runBtn.addEventListener('touchstart', e => {
-      e.preventDefault(); state.running = true; runBtn.classList.add('active');
+    fireBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      state.firing = true;
+      fireBtn.classList.add('active');
     }, { passive: false });
-    runBtn.addEventListener('touchend', () => {
-      state.running = false; runBtn.classList.remove('active');
+    fireBtn.addEventListener('touchend', () => {
+      state.firing = false;
+      fireBtn.classList.remove('active');
     });
+    wpnBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (onWeaponSwitch) onWeaponSwitch();
+    }, { passive: false });
+    mapBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (onMapToggle) onMapToggle();
+    }, { passive: false });
   }
 
   function onJoyStart(e) {
@@ -85,23 +97,22 @@ const TouchControls = (() => {
     const kx = Math.cos(ang) * clamped, ky = Math.sin(ang) * clamped;
     joyStick.style.transform =
       `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
-    state.move.x = kx / JOY_RADIUS;   // +δεξιά
-    state.move.z = -ky / JOY_RADIUS;  // +μπροστά (πάνω στην οθόνη)
+    state.move.x = kx / JOY_RADIUS;
+    state.move.z = -ky / JOY_RADIUS;
   }
 
   function onLookStart(e) {
     if (lookTouchId !== null) return;
     const t = e.changedTouches[0];
     lookTouchId = t.identifier;
-    lookLast = { x: t.clientX, y: t.clientY };
+    lookLastX = t.clientX;
   }
   function onLookMove(e) {
     for (const t of e.changedTouches) {
       if (t.identifier !== lookTouchId) continue;
       e.preventDefault();
-      state.lookDX += (t.clientX - lookLast.x);
-      state.lookDY += (t.clientY - lookLast.y);
-      lookLast = { x: t.clientX, y: t.clientY };
+      state.lookDX += (t.clientX - lookLastX);
+      lookLastX = t.clientX;
     }
   }
   function onLookEnd(e) {
@@ -110,19 +121,19 @@ const TouchControls = (() => {
     }
   }
 
+  function consumeLook() {
+    const dx = state.lookDX;
+    state.lookDX = 0;
+    return dx;
+  }
+
   function show() { if (root) root.classList.remove('hidden'); }
   function hide() {
     if (!root) return;
     root.classList.add('hidden');
-    state.move.x = 0; state.move.z = 0; state.running = false;
+    state.move.x = 0; state.move.z = 0;
+    state.firing = false;
     joyTouchId = lookTouchId = null;
-  }
-
-  /* Επιστρέφει το συσσωρευμένο look delta και το μηδενίζει. */
-  function consumeLook() {
-    const d = { dx: state.lookDX, dy: state.lookDY };
-    state.lookDX = 0; state.lookDY = 0;
-    return d;
   }
 
   if (isTouch) {
@@ -130,5 +141,10 @@ const TouchControls = (() => {
     else document.addEventListener('DOMContentLoaded', build);
   }
 
-  return { state, show, hide, consumeLook, get isTouch() { return isTouch; } };
+  return {
+    state, show, hide, consumeLook,
+    get isTouch() { return isTouch; },
+    set onWeaponSwitch(fn) { onWeaponSwitch = fn; },
+    set onMapToggle(fn) { onMapToggle = fn; },
+  };
 })();

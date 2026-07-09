@@ -2,226 +2,279 @@
 <html lang="el">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>THE BACKROOMS — Level 0</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ΝΕΚΡΗ ΖΩΝΗ</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  body { font-family: 'Courier New', monospace; color: #d8cf9e; }
+  body { font-family: 'Courier New', monospace; color: #cfd4e0;
+         touch-action: none; }
 
-  #game, #game canvas { position: absolute; inset: 0; }
+  #game { position: absolute; inset: 0;
+          display: flex; align-items: center; justify-content: center; }
+  #screen { image-rendering: pixelated; image-rendering: crisp-edges;
+            background: #000; }
 
+  /* scanlines πάνω από όλα για ρετρό CRT αίσθηση */
+  #scanlines {
+    position: absolute; inset: 0; z-index: 30; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px);
+  }
+
+  /* λάμψη ζημιάς */
+  #damage-flash {
+    position: absolute; inset: 0; z-index: 8; pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      rgba(200,20,20,0) 40%, rgba(200,20,20,0.55) 100%);
+    opacity: 0; transition: opacity 0.25s;
+  }
+
+  #message {
+    position: absolute; left: 50%; top: 12%;
+    transform: translateX(-50%);
+    z-index: 9; pointer-events: none;
+    font-size: clamp(13px, 2.2vmin, 20px); letter-spacing: 0.1em;
+    color: #e8e4c8; text-shadow: 0 0 8px #000, 0 0 3px #000;
+    opacity: 0; transition: opacity 0.4s;
+    text-align: center; max-width: 90vw;
+  }
+  #objective {
+    position: absolute; left: 10px; top: 8px; z-index: 9; pointer-events: none;
+    font-size: clamp(10px, 1.7vmin, 14px); letter-spacing: 0.08em;
+    color: rgba(120, 230, 140, 0.75); text-shadow: 0 0 6px #000;
+  }
+
+  /* -------- overlays -------- */
   .overlay {
-    position: absolute; inset: 0; z-index: 10;
+    position: absolute; inset: 0; z-index: 20;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    text-align: center; padding: 24px;
-    background: rgba(8, 7, 2, 0.88);
+    text-align: center; padding: 16px;
+    background: rgba(6, 8, 12, 0.92);
+    overflow-y: auto;
   }
   .hidden { display: none !important; }
 
-  h1 {
-    font-size: clamp(28px, 6vw, 56px);
-    letter-spacing: 0.35em;
-    color: #d8cf9e;
-    text-shadow: 0 0 24px rgba(216, 207, 158, 0.4);
-    margin-bottom: 6px;
-  }
-  .sub { font-size: 14px; letter-spacing: 0.5em; opacity: 0.6; margin-bottom: 34px; }
-  .lore {
-    max-width: 560px; line-height: 1.75; font-size: 15px;
-    opacity: 0.85; margin-bottom: 30px;
-  }
-  .controls {
-    font-size: 13px; opacity: 0.55; line-height: 2; margin-bottom: 34px;
-  }
+  h1 { font-size: clamp(26px, 7vmin, 54px); letter-spacing: 0.3em;
+       color: #d03030; text-shadow: 0 0 30px rgba(208, 48, 48, 0.5);
+       margin-bottom: 4px; }
+  h2 { font-size: clamp(16px, 3.4vmin, 26px); letter-spacing: 0.25em;
+       color: #cfd4e0; margin-bottom: 16px; }
+  .sub { font-size: clamp(10px, 1.9vmin, 14px); letter-spacing: 0.4em;
+         opacity: 0.55; margin-bottom: 18px; }
+  .lore { max-width: 620px; line-height: 1.65;
+          font-size: clamp(12px, 2vmin, 15px); opacity: 0.85;
+          margin-bottom: 18px; }
+  .stats { font-size: clamp(11px, 1.9vmin, 14px); opacity: 0.65;
+           margin: 10px 0 18px; line-height: 1.8; }
+  .controls-hint { font-size: clamp(10px, 1.7vmin, 12px); opacity: 0.45;
+                   line-height: 1.9; margin-bottom: 18px; }
+
   button {
-    font-family: inherit; font-size: 17px; letter-spacing: 0.3em;
-    padding: 14px 42px; cursor: pointer;
-    background: transparent; color: #d8cf9e;
-    border: 1px solid rgba(216, 207, 158, 0.5);
-    transition: background 0.2s, color 0.2s;
+    font-family: inherit; font-size: clamp(13px, 2.4vmin, 17px);
+    letter-spacing: 0.2em; padding: 12px 34px; cursor: pointer;
+    background: transparent; color: #cfd4e0;
+    border: 1px solid rgba(207, 212, 224, 0.45);
+    transition: background 0.15s, color 0.15s;
+    margin: 4px;
   }
-  button:hover { background: #d8cf9e; color: #14110a; }
+  button:hover, button:active { background: #cfd4e0; color: #0a0c10; }
+  button.primary { border-color: #d03030; color: #ff6050; }
+  button.primary:hover, button.primary:active { background: #d03030; color: #fff; }
+  button:disabled { opacity: 0.3; pointer-events: none; }
 
-  #dead h1 { color: #b03030; text-shadow: 0 0 24px rgba(176, 48, 48, 0.5); }
-  #win h1 { color: #e8e4d0; }
-  .stats { font-size: 14px; opacity: 0.6; margin: 14px 0 30px; }
-
-  /* HUD */
-  #hud { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
-  #crosshair {
-    position: absolute; left: 50%; top: 50%;
-    width: 4px; height: 4px; margin: -2px 0 0 -2px;
-    border-radius: 50%; background: rgba(216, 207, 158, 0.7);
+  /* κάρτες perk/shop */
+  .cards { display: flex; gap: 10px; flex-wrap: wrap;
+           justify-content: center; margin: 14px 0; max-width: 96vw; }
+  .card {
+    width: clamp(150px, 26vmin, 210px); padding: 14px 10px;
+    border: 1px solid rgba(207, 212, 224, 0.35);
+    background: rgba(20, 24, 32, 0.9); cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
   }
-  #bars { position: absolute; left: 26px; bottom: 26px; width: 210px; }
-  /* Στα touch, οι μπάρες πάνε πάνω-αριστερά για να μην πέφτουν στο joystick */
-  body.touch-mode #bars { bottom: auto; top: 20px; left: 20px; width: 160px; }
-  body.touch-mode #message { bottom: 24%; }
-  .bar-label { font-size: 11px; letter-spacing: 0.25em; opacity: 0.7; margin-bottom: 4px; }
-  .bar {
-    height: 7px; margin-bottom: 12px;
-    background: rgba(216, 207, 158, 0.12);
-    border: 1px solid rgba(216, 207, 158, 0.25);
-  }
-  .bar > div { height: 100%; width: 100%; transition: width 0.15s linear; }
-  #stamina-fill { background: #a8c070; }
-  #sanity-fill { background: #c08cd8; }
+  .card:hover, .card:active { border-color: #ffd040; transform: translateY(-3px); }
+  .card h3 { font-size: clamp(12px, 2.1vmin, 15px); letter-spacing: 0.12em;
+             color: #ffd040; margin-bottom: 8px; }
+  .card p { font-size: clamp(10px, 1.8vmin, 13px); opacity: 0.75; line-height: 1.5; }
+  .card .cost { display: block; margin-top: 8px; color: #50e0f0;
+                font-size: clamp(11px, 1.9vmin, 13px); }
+  .card.disabled { opacity: 0.35; pointer-events: none; }
 
-  #message {
-    position: absolute; left: 50%; bottom: 15%;
-    transform: translateX(-50%);
-    font-size: 17px; letter-spacing: 0.12em;
-    color: #e6dfb8; text-shadow: 0 0 10px #000;
-    opacity: 0; transition: opacity 0.6s;
-    white-space: nowrap; max-width: 92vw;
-    text-align: center; white-space: normal;
-  }
+  .scrap-line { color: #50e0f0; font-size: clamp(12px, 2.2vmin, 16px);
+                letter-spacing: 0.15em; margin-bottom: 6px; }
+  .cores-line { color: #c080ff; font-size: clamp(12px, 2.2vmin, 16px);
+                letter-spacing: 0.15em; margin-bottom: 6px; }
 
-  /* Touch controls (κινητά / APK).
-     Το overlay δεν πιάνει touches — μόνο τα χειριστήρια — ώστε τα
-     drags στο κενό να φτάνουν στο canvas για το βλέμμα. */
-  #touch-controls { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  /* -------- touch controls -------- */
+  #touch-controls { position: absolute; inset: 0; z-index: 12;
+                    pointer-events: none; }
   #touch-controls.hidden { display: none; }
   #joy-base {
-    position: absolute; left: 30px; bottom: 30px;
-    width: 140px; height: 140px; border-radius: 50%;
-    background: rgba(216, 207, 158, 0.08);
-    border: 2px solid rgba(216, 207, 158, 0.3);
+    position: absolute; left: 24px; bottom: 24px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(207, 212, 224, 0.07);
+    border: 2px solid rgba(207, 212, 224, 0.25);
     touch-action: none; pointer-events: auto;
   }
   #joy-stick {
     position: absolute; left: 50%; top: 50%;
-    width: 60px; height: 60px; border-radius: 50%;
+    width: 52px; height: 52px; border-radius: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(216, 207, 158, 0.35);
-    border: 2px solid rgba(216, 207, 158, 0.6);
+    background: rgba(207, 212, 224, 0.3);
+    border: 2px solid rgba(207, 212, 224, 0.5);
     pointer-events: none;
   }
-  #run-btn {
-    position: absolute; right: 34px; bottom: 46px;
-    width: 96px; height: 96px; border-radius: 50%;
+  #fire-btn {
+    position: absolute; right: 28px; bottom: 34px;
+    width: 92px; height: 92px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 13px; letter-spacing: 0.15em; color: #d8cf9e;
-    background: rgba(216, 207, 158, 0.08);
-    border: 2px solid rgba(216, 207, 158, 0.3);
-    touch-action: none; user-select: none; pointer-events: auto;
+    font-size: 15px; letter-spacing: 0.15em; color: #ff6050;
+    background: rgba(208, 48, 48, 0.12);
+    border: 2px solid rgba(208, 48, 48, 0.5);
+    touch-action: none; pointer-events: auto;
   }
-  #run-btn.active { background: rgba(216, 207, 158, 0.3); }
+  #fire-btn.active { background: rgba(208, 48, 48, 0.45); color: #fff; }
+  #wpn-btn, #map-btn {
+    position: absolute; right: 136px; bottom: 44px;
+    width: 58px; height: 58px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 0.1em; color: #cfd4e0;
+    background: rgba(207, 212, 224, 0.08);
+    border: 2px solid rgba(207, 212, 224, 0.3);
+    touch-action: none; pointer-events: auto;
+  }
+  #map-btn { right: 28px; bottom: 142px; width: 48px; height: 48px; }
+
   #pause-btn {
-    position: absolute; right: 18px; top: 18px; z-index: 7;
-    width: 42px; height: 42px; padding: 0; font-size: 20px;
-    letter-spacing: 0; line-height: 1;
-    border: 1px solid rgba(216, 207, 158, 0.4);
-    background: rgba(8, 7, 2, 0.5); color: #d8cf9e;
+    position: absolute; left: 50%; transform: translateX(-50%); top: 6px;
+    z-index: 13; width: 40px; height: 30px; padding: 0;
+    font-size: 14px; letter-spacing: 0;
+    border: 1px solid rgba(207, 212, 224, 0.3);
+    background: rgba(6, 8, 12, 0.4); color: #cfd4e0;
   }
   #pause-btn.hidden { display: none; }
 
-  /* Vignette παραφροσύνης */
-  #vignette {
-    position: absolute; inset: 0; z-index: 4; pointer-events: none;
-    background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 35%, rgba(20, 0, 25, 0.9) 100%);
-    opacity: 0; transition: opacity 0.5s;
+  #shop-prompt {
+    position: absolute; left: 50%; bottom: 26%; transform: translateX(-50%);
+    z-index: 13;
   }
+  #shop-prompt.hidden { display: none; }
 
-  /* Στατικός «κόκκος» ταινίας */
-  #grain {
-    position: absolute; inset: 0; z-index: 3; pointer-events: none;
-    opacity: 0.05;
-    background-image: repeating-conic-gradient(#000 0 0.0001%, #fff 0 0.0002%);
-    animation: grain 0.4s steps(4) infinite;
+  /* προτροπή landscape */
+  #rotate-prompt {
+    position: absolute; inset: 0; z-index: 40;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: #06080c; text-align: center;
+    font-size: 16px; letter-spacing: 0.15em;
   }
-  @keyframes grain {
-    0% { transform: translate(0, 0); }
-    25% { transform: translate(-2%, 1%); }
-    50% { transform: translate(1%, -2%); }
-    75% { transform: translate(-1%, 2%); }
-    100% { transform: translate(2%, -1%); }
-  }
-
-  /* Jumpscare */
-  #jumpscare {
-    position: absolute; inset: 0; z-index: 20;
-    background: #000;
-    display: flex; align-items: center; justify-content: center;
-  }
-  #jumpscare img {
-    width: min(90vw, 90vh);
-    animation: scare 0.9s ease-in forwards;
-  }
-  @keyframes scare {
-    from { transform: scale(0.4); opacity: 0.4; }
-    to   { transform: scale(1.6); opacity: 1; }
+  #rotate-prompt .icon { font-size: 44px;
+    animation: rot 1.6s ease-in-out infinite; }
+  @keyframes rot {
+    0%, 25% { transform: rotate(0); }
+    60%, 100% { transform: rotate(90deg); }
   }
 </style>
 </head>
 <body>
-  <div id="game"></div>
+  <div id="game"><canvas id="screen" width="320" height="180"></canvas></div>
 
-  <div id="grain"></div>
-  <div id="vignette"></div>
-
-  <button id="pause-btn" class="hidden" aria-label="Παύση">II</button>
-
-  <div id="hud" class="hidden">
-    <div id="crosshair"></div>
-    <div id="bars">
-      <div class="bar-label">ΑΝΤΟΧΗ</div>
-      <div class="bar"><div id="stamina-fill"></div></div>
-      <div class="bar-label">ΛΟΓΙΚΗ</div>
-      <div class="bar"><div id="sanity-fill"></div></div>
-    </div>
-    <div id="message"></div>
+  <div id="damage-flash"></div>
+  <div id="message"></div>
+  <div id="objective" class="hidden"></div>
+  <button id="pause-btn" class="hidden">II</button>
+  <div id="shop-prompt" class="hidden">
+    <button class="primary" id="shop-open-btn">ΤΕΡΜΑΤΙΚΟ ΠΡΟΜΗΘΕΙΩΝ <span id="shop-key-hint">[E]</span></button>
   </div>
 
+  <!-- ΜΕΝΟΥ -->
   <div id="menu" class="overlay">
-    <h1>THE BACKROOMS</h1>
-    <div class="sub">LEVEL 0 — ΤΟ ΛΟΜΠΙ</div>
+    <h1>ΝΕΚΡΗ ΖΩΝΗ</h1>
+    <div class="sub">ΕΛΠΙΣ // ΑΠΟΣΤΟΛΗ ΑΝΑΚΤΗΣΗΣ</div>
     <p class="lore">
-      Γλίστρησες έξω από την πραγματικότητα σε λάθος σημείο και έπεσες εδώ:
-      ατελείωτοι κίτρινοι διάδρομοι, υγρή μοκέτα, το μονότονο βουητό
-      των λαμπών φθορίου. Κάπου υπάρχει μια έξοδος.
-      Και κάτι άλλο περπατάει σε αυτούς τους διαδρόμους —
-      αν το ακούσεις να πλησιάζει, <em>τρέξε</em>.
+      Έτος 2189. Το αποικιακό σκάφος «ΕΛΠΙΣ» έπεσε στη Νεκρή Ζώνη — εκεί όπου
+      κάθε σήμα πεθαίνει. Η AI του σκάφους, ο ΩΡΙΩΝ, «αναβάθμισε» το πλήρωμα:
+      μισοί μηχανές, μισοί πτώματα. Είσαι ο κλώνος #<span id="clone-no">1</span>
+      του αξιωματικού ασφαλείας Άλεξ «Ντεξ» Βρόντου. Ο εκτυπωτής κλώνων
+      δουλεύει ακόμα. Κατέβα 4 καταστρώματα. Σβήσε τον ΩΡΙΩΝ.
     </p>
-    <div class="controls">
-      WASD — κίνηση &nbsp;·&nbsp; ΠΟΝΤΙΚΙ — βλέμμα &nbsp;·&nbsp; SHIFT — τρέξιμο<br>
-      Μάζεψε almond water για να κρατήσεις τη λογική σου.
+    <div class="controls-hint" id="hint-desktop">
+      WASD κίνηση · ΠΟΝΤΙΚΙ στόχευση · ΚΛΙΚ πυρ · 1-4/Q όπλα · TAB χάρτης
     </div>
-    <button id="start-btn">ΕΙΣΟΔΟΣ</button>
+    <div class="controls-hint hidden" id="hint-touch">
+      Αριστερό joystick κίνηση · σύρε δεξιά για στόχευση · ΠΥΡ κρατημένο για ριπές
+    </div>
+    <button class="primary" id="start-btn">ΝΕΟΣ ΚΛΩΝΟΣ</button>
+    <button id="meta-btn">ΜΝΗΜΕΣ ΚΛΩΝΩΝ (ΑΝΑΒΑΘΜΙΣΕΙΣ)</button>
   </div>
 
+  <!-- ΠΑΥΣΗ -->
   <div id="pause" class="overlay hidden">
-    <h1>ΠΑΥΣΗ</h1>
-    <p class="lore">Οι τοίχοι περιμένουν.</p>
-    <button id="resume-btn">ΣΥΝΕΧΕΙΑ</button>
+    <h2>ΠΑΥΣΗ</h2>
+    <button class="primary" id="resume-btn">ΣΥΝΕΧΕΙΑ</button>
+    <button id="quit-btn">ΕΓΚΑΤΑΛΕΙΨΗ RUN</button>
   </div>
 
+  <!-- PERKS -->
+  <div id="perk" class="overlay hidden">
+    <h2>ΚΑΘΟΔΟΣ…</h2>
+    <p class="lore">Το ασανσέρ βουίζει. Διάλεξε μία ενίσχυση για το επόμενο κατάστρωμα.</p>
+    <div class="cards" id="perk-cards"></div>
+  </div>
+
+  <!-- SHOP -->
+  <div id="shop" class="overlay hidden">
+    <h2>ΤΕΡΜΑΤΙΚΟ ΠΡΟΜΗΘΕΙΩΝ</h2>
+    <div class="scrap-line">SCRAP: <span id="shop-scrap">0</span></div>
+    <div class="cards" id="shop-cards"></div>
+    <button id="shop-close-btn">ΚΛΕΙΣΙΜΟ</button>
+  </div>
+
+  <!-- ΘΑΝΑΤΟΣ -->
   <div id="dead" class="overlay hidden">
-    <h1>ΧΑΘΗΚΕΣ</h1>
-    <p class="lore" id="death-reason"></p>
+    <h1>ΚΛΩΝΟΣ ΝΕΚΡΟΣ</h1>
     <div class="stats" id="death-stats"></div>
-    <button id="retry-btn">ΞΑΝΑ</button>
+    <div class="cores-line">ΠΥΡΗΝΕΣ ΜΝΗΜΗΣ: +<span id="death-cores">0</span></div>
+    <div class="cards" id="meta-cards-dead"></div>
+    <button class="primary" id="retry-btn">ΕΚΤΥΠΩΣΗ ΝΕΟΥ ΚΛΩΝΟΥ</button>
   </div>
 
+  <!-- ΝΙΚΗ -->
   <div id="win" class="overlay hidden">
-    <h1>NOCLIP</h1>
-    <p class="lore">Πέρασες μέσα από το φως. Η πραγματικότητα σε δέχτηκε πίσω.<br>Προς το παρόν.</p>
+    <h1 style="color:#33e070; text-shadow:0 0 30px rgba(51,224,112,0.5)">ΩΡΙΩΝ ΕΚΤΟΣ</h1>
+    <p class="lore">Ο πυρήνας σβήνει. Τα φώτα του «ΕΛΠΙΣ» ανάβουν ξανά, ένα-ένα.
+      Το σκάφος είναι δικό σου. Μέχρι το επόμενο run.</p>
     <div class="stats" id="win-stats"></div>
-    <button id="again-btn">ΝΕΟΣ ΛΑΒΥΡΙΝΘΟΣ</button>
+    <div class="cores-line">ΠΥΡΗΝΕΣ ΜΝΗΜΗΣ: +<span id="win-cores">0</span></div>
+    <button class="primary" id="win-again-btn">ΝΕΟ RUN</button>
   </div>
 
-  <div id="jumpscare" class="hidden">
-    <img id="jumpscare-img" alt="">
+  <!-- META SHOP (από μενού) -->
+  <div id="meta" class="overlay hidden">
+    <h2>ΜΝΗΜΕΣ ΚΛΩΝΩΝ</h2>
+    <div class="cores-line">ΠΥΡΗΝΕΣ: <span id="meta-cores">0</span></div>
+    <div class="cards" id="meta-cards"></div>
+    <button id="meta-close-btn">ΠΙΣΩ</button>
   </div>
 
-  <script src="js/three.min.js"></script>
-  <script src="js/textures.js"></script>
+  <div id="rotate-prompt" class="hidden">
+    <div class="icon">📱</div>
+    <div>ΓΥΡΙΣΕ ΤΗ ΣΥΣΚΕΥΗ ΟΡΙΖΟΝΤΙΑ</div>
+  </div>
+
+  <div id="scanlines"></div>
+
+  <script src="js/assets.js"></script>
   <script src="js/audio.js"></script>
-  <script src="js/world.js"></script>
-  <script src="js/entity.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/procgen.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/roguelike.js"></script>
+  <script src="js/hud.js"></script>
   <script src="js/touch.js"></script>
   <script src="js/main.js"></script>
 </body>

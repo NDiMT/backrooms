@@ -41,6 +41,12 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Force landscape orientation
+        run: |
+          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' \
+            android/app/src/main/AndroidManifest.xml
+          grep -q 'sensorLandscape' android/app/src/main/AndroidManifest.xml
+
       - name: Sync web assets into Android project
         run: npx cap sync android
 
@@ -54,24 +60,24 @@ jobs:
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-             dist/the-backrooms-level0.apk
+             dist/nekri-zoni.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: the-backrooms-level0-apk
-          path: dist/the-backrooms-level0.apk
+          name: nekri-zoni-apk
+          path: dist/nekri-zoni.apk
           if-no-files-found: error
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-latest
-          name: The Backrooms — Android (latest)
+          name: ΝΕΚΡΗ ΖΩΝΗ — Android (latest)
           body: |
-            Αυτόματα χτισμένο APK του The Backrooms — Level 0.
+            Αυτόματα χτισμένο APK του «ΝΕΚΡΗ ΖΩΝΗ» — Doom-style roguelike FPS.
 
-            Κατέβασε το `the-backrooms-level0.apk` παρακάτω και εγκατέστησέ το
-            στο Android (χρειάζεται να επιτρέψεις εγκατάσταση από «άγνωστες πηγές»).
-          files: dist/the-backrooms-level0.apk
+            Κατέβασε το `nekri-zoni.apk` παρακάτω και εγκατέστησέ το στο Android
+            (χρειάζεται να επιτρέψεις εγκατάσταση από «άγνωστες πηγές»).
+          files: dist/nekri-zoni.apk
           make_latest: true

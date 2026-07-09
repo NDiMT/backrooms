@@ -1,11 +1,9 @@
-/* Όλος ο ήχος συντίθεται με WebAudio — κανένα αρχείο ήχου.
-   Ξεκινά μετά από user gesture (click στο start). */
+/* ΝΕΚΡΗ ΖΩΝΗ — Συνθετικός ήχος WebAudio (κανένα αρχείο ήχου).
+   Ξεκινά μετά από user gesture. */
 
 const GameAudio = (() => {
-  let ctx = null;
-  let master, humGain, droneGain, heartGain;
-  let humOsc, humLFO;
-  let started = false;
+  let ctx = null, master = null, started = false;
+  let ambGain = null;
 
   function noiseBuffer(seconds) {
     const buf = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
@@ -18,183 +16,97 @@ const GameAudio = (() => {
     if (started) { if (ctx.state === 'suspended') ctx.resume(); return; }
     started = true;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-
     master = ctx.createGain();
-    master.gain.value = 0.9;
+    master.gain.value = 0.8;
     master.connect(ctx.destination);
 
-    /* --- Βουητό λαμπών φθορίου: πριονωτό 120 Hz + φιλτραρισμένος θόρυβος --- */
-    humGain = ctx.createGain();
-    humGain.gain.value = 0.05;
-    humGain.connect(master);
-
-    humOsc = ctx.createOscillator();
-    humOsc.type = 'sawtooth';
-    humOsc.frequency.value = 120;
-    const humFilter = ctx.createBiquadFilter();
-    humFilter.type = 'lowpass';
-    humFilter.frequency.value = 320;
-    humOsc.connect(humFilter);
-    humFilter.connect(humGain);
-    humOsc.start();
-
-    const hiss = ctx.createBufferSource();
-    hiss.buffer = noiseBuffer(2);
-    hiss.loop = true;
-    const hissFilter = ctx.createBiquadFilter();
-    hissFilter.type = 'bandpass';
-    hissFilter.frequency.value = 2400;
-    hissFilter.Q.value = 2;
-    const hissGain = ctx.createGain();
-    hissGain.gain.value = 0.012;
-    hiss.connect(hissFilter);
-    hissFilter.connect(hissGain);
-    hissGain.connect(master);
-    hiss.start();
-
-    // ελαφρύ τρεμούλιασμα στο βουητό
-    humLFO = ctx.createOscillator();
-    humLFO.frequency.value = 7;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.015;
-    humLFO.connect(lfoGain);
-    lfoGain.connect(humGain.gain);
-    humLFO.start();
-
-    /* --- Drone του entity: δύο ελαφρώς detuned χαμηλά ημίτονα --- */
-    droneGain = ctx.createGain();
-    droneGain.gain.value = 0;
-    droneGain.connect(master);
-    const d1 = ctx.createOscillator();
-    d1.frequency.value = 52;
-    const d2 = ctx.createOscillator();
-    d2.frequency.value = 54.5;
-    d1.connect(droneGain);
-    d2.connect(droneGain);
+    // ---- ambient: βαθύ drone μηχανών + σφύριγμα εξαερισμού ----
+    ambGain = ctx.createGain();
+    ambGain.gain.value = 0.08;
+    ambGain.connect(master);
+    const d1 = ctx.createOscillator(); d1.type = 'sawtooth'; d1.frequency.value = 36;
+    const d2 = ctx.createOscillator(); d2.type = 'sine'; d2.frequency.value = 37.5;
+    const df = ctx.createBiquadFilter(); df.type = 'lowpass'; df.frequency.value = 160;
+    d1.connect(df); d2.connect(df); df.connect(ambGain);
     d1.start(); d2.start();
-
-    /* --- Καρδιοχτύπι όταν σε κυνηγάει --- */
-    heartGain = ctx.createGain();
-    heartGain.gain.value = 0;
-    heartGain.connect(master);
-    scheduleHeart();
+    const hiss = ctx.createBufferSource();
+    hiss.buffer = noiseBuffer(2); hiss.loop = true;
+    const hf = ctx.createBiquadFilter(); hf.type = 'bandpass';
+    hf.frequency.value = 3200; hf.Q.value = 3;
+    const hg = ctx.createGain(); hg.gain.value = 0.008;
+    hiss.connect(hf); hf.connect(hg); hg.connect(master);
+    hiss.start();
   }
 
-  let heartTimer = null;
-  function scheduleHeart() {
-    const thump = () => {
-      if (!ctx) return;
+  function blast(dur, freq0, freq1, type, vol, noiseVol, noiseFreq) {
+    if (!started) return;
+    const t = ctx.currentTime;
+    if (vol > 0) {
       const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(70, ctx.currentTime);
-      o.frequency.exponentialRampToValueAtTime(38, ctx.currentTime + 0.12);
+      o.type = type;
+      o.frequency.setValueAtTime(freq0, t);
+      o.frequency.exponentialRampToValueAtTime(Math.max(20, freq1), t + dur);
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.9, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
-      o.connect(g); g.connect(heartGain);
-      o.start(); o.stop(ctx.currentTime + 0.2);
-    };
-    heartTimer = setInterval(() => { thump(); setTimeout(thump, 260); }, 850);
-  }
-
-  /* Ένταση φλας/χαμηλώματος φώτων — ακολουθεί το flicker της σκηνής. */
-  function setFlicker(dim) {
-    if (!started) return;
-    // όταν τα φώτα πέφτουν, το βουητό «πνίγεται»
-    humGain.gain.setTargetAtTime(0.05 * (0.4 + 0.6 * (1 - dim)), ctx.currentTime, 0.03);
-  }
-
-  function setEntityProximity(v) { // 0..1
-    if (!started) return;
-    droneGain.gain.setTargetAtTime(0.22 * v * v, ctx.currentTime, 0.25);
-  }
-
-  function setChase(on) {
-    if (!started) return;
-    heartGain.gain.setTargetAtTime(on ? 0.5 : 0, ctx.currentTime, 0.3);
-  }
-
-  function footstep(running) {
-    if (!started) return;
-    const src = ctx.createBufferSource();
-    src.buffer = noiseBuffer(0.12);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = running ? 900 : 600;
-    const g = ctx.createGain();
-    const v = running ? 0.16 : 0.09;
-    g.gain.setValueAtTime(v, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.11);
-    src.connect(f); f.connect(g); g.connect(master);
-    src.start();
-  }
-
-  function pickup() {
-    if (!started) return;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(880, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.25, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    o.connect(g); g.connect(master);
-    o.start(); o.stop(ctx.currentTime + 0.45);
-  }
-
-  function jumpscare() {
-    if (!started) return;
-    const src = ctx.createBufferSource();
-    src.buffer = noiseBuffer(1.2);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(1.0, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.1);
-    src.connect(g); g.connect(master);
-    src.start();
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(700, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.9);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.5, ctx.currentTime);
-    og.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.0);
-    o.connect(og); og.connect(master);
-    o.start(); o.stop(ctx.currentTime + 1.1);
-  }
-
-  function win() {
-    if (!started) return;
-    [523.25, 659.25, 783.99].forEach((f, i) => {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
-      g.gain.linearRampToValueAtTime(0.12, ctx.currentTime + i * 0.12 + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.2);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
       o.connect(g); g.connect(master);
-      o.start(ctx.currentTime + i * 0.12);
-      o.stop(ctx.currentTime + 2.4);
-    });
-  }
-
-  /* Απόκοσμος τόνος όταν πλησιάζεις την έξοδο. */
-  let exitOsc = null, exitGain = null;
-  function setExitProximity(v) { // 0..1
-    if (!started) return;
-    if (!exitOsc) {
-      exitOsc = ctx.createOscillator();
-      exitOsc.type = 'sine';
-      exitOsc.frequency.value = 1046;
-      exitGain = ctx.createGain();
-      exitGain.gain.value = 0;
-      exitOsc.connect(exitGain);
-      exitGain.connect(master);
-      exitOsc.start();
+      o.start(t); o.stop(t + dur + 0.05);
     }
-    exitGain.gain.setTargetAtTime(0.05 * v, ctx.currentTime, 0.4);
+    if (noiseVol > 0) {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(dur);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = noiseFreq || 1200;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(noiseVol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(f); f.connect(g); g.connect(master);
+      src.start(t);
+    }
   }
 
-  return { start, setFlicker, setEntityProximity, setChase, setExitProximity,
-           footstep, pickup, jumpscare, win };
+  const fireSounds = {
+    pistol:   () => blast(0.14, 400, 120, 'square', 0.12, 0.22, 2500),
+    shotgun:  () => blast(0.35, 180, 50, 'square', 0.2, 0.5, 900),
+    rifle:    () => blast(0.09, 900, 300, 'sawtooth', 0.14, 0.08, 4000),
+    launcher: () => blast(0.4, 90, 40, 'sine', 0.25, 0.15, 500),
+  };
+
+  return {
+    start,
+    fire(kind) { (fireSounds[kind] || fireSounds.pistol)(); },
+    dryFire() { blast(0.06, 800, 500, 'square', 0.05, 0, 0); },
+    explosion() { blast(0.6, 100, 30, 'sawtooth', 0.25, 0.55, 600); },
+    hitMarker() { blast(0.05, 1200, 900, 'square', 0.06, 0, 0); },
+    enemyPain() { blast(0.15, 300, 150, 'sawtooth', 0.08, 0.05, 800); },
+    enemyDie(type) {
+      if (type === 'drone') blast(0.3, 1400, 100, 'sawtooth', 0.12, 0.1, 2000);
+      else if (type === 'boss') { blast(1.4, 200, 25, 'sawtooth', 0.3, 0.5, 400); }
+      else blast(0.45, 220, 60, 'sawtooth', 0.13, 0.15, 700);
+    },
+    enemyAlert(type) {
+      if (type === 'drone') blast(0.2, 800, 1400, 'square', 0.06, 0, 0);
+      else blast(0.35, 120, 220, 'sawtooth', 0.09, 0.05, 500);
+    },
+    enemyFire(type) {
+      if (type === 'spitter') blast(0.2, 500, 200, 'sine', 0.09, 0.1, 900);
+      else blast(0.12, 700, 350, 'square', 0.08, 0.04, 2000);
+    },
+    bossFire() { blast(0.3, 300, 90, 'sawtooth', 0.16, 0.12, 700); },
+    bossRoar() { blast(1.2, 90, 45, 'sawtooth', 0.3, 0.3, 300); },
+    playerPain() { blast(0.2, 250, 110, 'square', 0.14, 0.1, 600); },
+    playerDie() { blast(1.0, 300, 40, 'sawtooth', 0.25, 0.3, 500); },
+    pickup() { blast(0.15, 700, 1100, 'sine', 0.12, 0, 0); },
+    scrapPickup() { blast(0.08, 1100, 1500, 'square', 0.07, 0, 0); },
+    weaponPickup() { blast(0.3, 300, 700, 'square', 0.14, 0.08, 1500); },
+    doorOpen() { blast(0.5, 90, 220, 'sawtooth', 0.06, 0.12, 400); },
+    elevator() { blast(0.9, 200, 500, 'sine', 0.14, 0.1, 800); },
+    uiClick() { blast(0.05, 900, 700, 'square', 0.06, 0, 0); },
+    perk() { blast(0.5, 500, 1000, 'sine', 0.14, 0, 0); },
+    win() {
+      [523, 659, 784, 1046].forEach((f, i) => {
+        setTimeout(() => blast(0.8, f, f * 0.99, 'sine', 0.12, 0, 0), i * 140);
+      });
+    },
+  };
 })();

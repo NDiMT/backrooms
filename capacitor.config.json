@@ -1,6 +1,6 @@
 {
-  "appId": "gr.happyonline.backrooms",
-  "appName": "The Backrooms",
+  "appId": "gr.happyonline.deadzone",
+  "appName": "ΝΕΚΡΗ ΖΩΝΗ",
   "webDir": "www",
   "android": {
     "allowMixedContent": false

@@ -1,7 +1,7 @@
 {
-  "name": "backrooms-level0",
+  "name": "nekri-zoni",
   "version": "1.0.0",
-  "description": "The Backrooms — Level 0, ένα liminal space horror παιχνίδι στον browser / Android",
+  "description": "ΝΕΚΡΗ ΖΩΝΗ — Doom-style roguelike FPS στον browser / Android",
   "private": true,
   "scripts": {
     "build": "node scripts/build-www.js",
