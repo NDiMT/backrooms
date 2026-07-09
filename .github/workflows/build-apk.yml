@@ -31,6 +31,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # μόνο τα απαραίτητα — το default κατεβάζει και emulator,
+          # που είναι άχρηστο για assembleDebug και επιρρεπές σε flaky downloads
+          packages: 'platform-tools'
 
       - name: Install dependencies
         run: npm install
