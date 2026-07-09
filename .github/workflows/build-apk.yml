@@ -73,6 +73,14 @@ jobs:
           path: dist/nekri-zoni.apk
           if-no-files-found: error
 
+      - name: Remove stale release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # απομεινάρι του παλιού παιχνιδιού στο ίδιο release tag
+          gh release delete-asset android-latest the-backrooms-level0.apk \
+            --repo "$GITHUB_REPOSITORY" --yes || true
+
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
