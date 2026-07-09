@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE BACKROOMS — Level 0</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: 'Courier New', monospace; color: #d8cf9e; }
+
+  #game, #game canvas { position: absolute; inset: 0; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 24px;
+    background: rgba(8, 7, 2, 0.88);
+  }
+  .hidden { display: none !important; }
+
+  h1 {
+    font-size: clamp(28px, 6vw, 56px);
+    letter-spacing: 0.35em;
+    color: #d8cf9e;
+    text-shadow: 0 0 24px rgba(216, 207, 158, 0.4);
+    margin-bottom: 6px;
+  }
+  .sub { font-size: 14px; letter-spacing: 0.5em; opacity: 0.6; margin-bottom: 34px; }
+  .lore {
+    max-width: 560px; line-height: 1.75; font-size: 15px;
+    opacity: 0.85; margin-bottom: 30px;
+  }
+  .controls {
+    font-size: 13px; opacity: 0.55; line-height: 2; margin-bottom: 34px;
+  }
+  button {
+    font-family: inherit; font-size: 17px; letter-spacing: 0.3em;
+    padding: 14px 42px; cursor: pointer;
+    background: transparent; color: #d8cf9e;
+    border: 1px solid rgba(216, 207, 158, 0.5);
+    transition: background 0.2s, color 0.2s;
+  }
+  button:hover { background: #d8cf9e; color: #14110a; }
+
+  #dead h1 { color: #b03030; text-shadow: 0 0 24px rgba(176, 48, 48, 0.5); }
+  #win h1 { color: #e8e4d0; }
+  .stats { font-size: 14px; opacity: 0.6; margin: 14px 0 30px; }
+
+  /* HUD */
+  #hud { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+  #crosshair {
+    position: absolute; left: 50%; top: 50%;
+    width: 4px; height: 4px; margin: -2px 0 0 -2px;
+    border-radius: 50%; background: rgba(216, 207, 158, 0.7);
+  }
+  #bars { position: absolute; left: 26px; bottom: 26px; width: 210px; }
+  .bar-label { font-size: 11px; letter-spacing: 0.25em; opacity: 0.7; margin-bottom: 4px; }
+  .bar {
+    height: 7px; margin-bottom: 12px;
+    background: rgba(216, 207, 158, 0.12);
+    border: 1px solid rgba(216, 207, 158, 0.25);
+  }
+  .bar > div { height: 100%; width: 100%; transition: width 0.15s linear; }
+  #stamina-fill { background: #a8c070; }
+  #sanity-fill { background: #c08cd8; }
+
+  #message {
+    position: absolute; left: 50%; bottom: 15%;
+    transform: translateX(-50%);
+    font-size: 17px; letter-spacing: 0.12em;
+    color: #e6dfb8; text-shadow: 0 0 10px #000;
+    opacity: 0; transition: opacity 0.6s;
+    white-space: nowrap;
+  }
+
+  /* Vignette παραφροσύνης */
+  #vignette {
+    position: absolute; inset: 0; z-index: 4; pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0) 35%, rgba(20, 0, 25, 0.9) 100%);
+    opacity: 0; transition: opacity 0.5s;
+  }
+
+  /* Στατικός «κόκκος» ταινίας */
+  #grain {
+    position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    opacity: 0.05;
+    background-image: repeating-conic-gradient(#000 0 0.0001%, #fff 0 0.0002%);
+    animation: grain 0.4s steps(4) infinite;
+  }
+  @keyframes grain {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-2%, 1%); }
+    50% { transform: translate(1%, -2%); }
+    75% { transform: translate(-1%, 2%); }
+    100% { transform: translate(2%, -1%); }
+  }
+
+  /* Jumpscare */
+  #jumpscare {
+    position: absolute; inset: 0; z-index: 20;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #jumpscare img {
+    width: min(90vw, 90vh);
+    animation: scare 0.9s ease-in forwards;
+  }
+  @keyframes scare {
+    from { transform: scale(0.4); opacity: 0.4; }
+    to   { transform: scale(1.6); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="grain"></div>
+  <div id="vignette"></div>
+
+  <div id="hud" class="hidden">
+    <div id="crosshair"></div>
+    <div id="bars">
+      <div class="bar-label">ΑΝΤΟΧΗ</div>
+      <div class="bar"><div id="stamina-fill"></div></div>
+      <div class="bar-label">ΛΟΓΙΚΗ</div>
+      <div class="bar"><div id="sanity-fill"></div></div>
+    </div>
+    <div id="message"></div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <h1>THE BACKROOMS</h1>
+    <div class="sub">LEVEL 0 — ΤΟ ΛΟΜΠΙ</div>
+    <p class="lore">
+      Γλίστρησες έξω από την πραγματικότητα σε λάθος σημείο και έπεσες εδώ:
+      ατελείωτοι κίτρινοι διάδρομοι, υγρή μοκέτα, το μονότονο βουητό
+      των λαμπών φθορίου. Κάπου υπάρχει μια έξοδος.
+      Και κάτι άλλο περπατάει σε αυτούς τους διαδρόμους —
+      αν το ακούσεις να πλησιάζει, <em>τρέξε</em>.
+    </p>
+    <div class="controls">
+      WASD — κίνηση &nbsp;·&nbsp; ΠΟΝΤΙΚΙ — βλέμμα &nbsp;·&nbsp; SHIFT — τρέξιμο<br>
+      Μάζεψε almond water για να κρατήσεις τη λογική σου.
+    </div>
+    <button id="start-btn">ΕΙΣΟΔΟΣ</button>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <h1>ΠΑΥΣΗ</h1>
+    <p class="lore">Οι τοίχοι περιμένουν.</p>
+    <button id="resume-btn">ΣΥΝΕΧΕΙΑ</button>
+  </div>
+
+  <div id="dead" class="overlay hidden">
+    <h1>ΧΑΘΗΚΕΣ</h1>
+    <p class="lore" id="death-reason"></p>
+    <div class="stats" id="death-stats"></div>
+    <button id="retry-btn">ΞΑΝΑ</button>
+  </div>
+
+  <div id="win" class="overlay hidden">
+    <h1>NOCLIP</h1>
+    <p class="lore">Πέρασες μέσα από το φως. Η πραγματικότητα σε δέχτηκε πίσω.<br>Προς το παρόν.</p>
+    <div class="stats" id="win-stats"></div>
+    <button id="again-btn">ΝΕΟΣ ΛΑΒΥΡΙΝΘΟΣ</button>
+  </div>
+
+  <div id="jumpscare" class="hidden">
+    <img id="jumpscare-img" alt="">
+  </div>
+
+  <script src="js/three.min.js"></script>
+  <script src="js/textures.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/entity.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
