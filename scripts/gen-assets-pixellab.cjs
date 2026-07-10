@@ -13,6 +13,15 @@
 const fs = require('fs');
 const path = require('path');
 
+// Το node fetch αγνοεί το HTTPS_PROXY· σε περιβάλλοντα με proxy (π.χ.
+// Claude Code cloud) δρομολόγησέ το ρητά μέσω undici EnvHttpProxyAgent.
+try {
+  const { setGlobalDispatcher, EnvHttpProxyAgent } = require('undici');
+  if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+    setGlobalDispatcher(new EnvHttpProxyAgent());
+  }
+} catch (e) { /* χωρίς undici: απευθείας σύνδεση */ }
+
 const KEY = process.env.PIXELLAB_API_KEY;
 if (!KEY) { console.error('Set PIXELLAB_API_KEY'); process.exit(1); }
 
@@ -122,12 +131,81 @@ for (const [name, desc] of Object.entries(PICKUPS)) {
 }
 
 DEFS.extra = [
-  { out: 'proj_acid', desc: `small green dripping acid glob projectile, glowing${STYLE}`, w: 16, h: 16 },
-  { out: 'proj_plasma', desc: `small bright cyan plasma ball projectile with glowing core${STYLE}`, w: 16, h: 16 },
-  { out: 'proj_bolt', desc: `small red orange energy bolt projectile, glowing${STYLE}`, w: 16, h: 16 },
-  { out: 'proj_flame', desc: `small orange yellow fireball projectile with flame trail${STYLE}`, w: 16, h: 16 },
+  { out: 'proj_acid', desc: `small green dripping acid glob projectile, glowing${STYLE}`, w: 32, h: 32 },
+  { out: 'proj_plasma', desc: `small bright cyan plasma ball projectile with glowing core${STYLE}`, w: 32, h: 32 },
+  { out: 'proj_bolt', desc: `small red orange energy bolt projectile, glowing${STYLE}`, w: 32, h: 32 },
+  { out: 'proj_flame', desc: `small orange yellow fireball projectile with flame trail${STYLE}`, w: 32, h: 32 },
   { out: 'prop_terminal', desc: `small sci-fi supply vending terminal kiosk, dark metal body, glowing green screen, yellow keypad, standing on small legs, front view${STYLE}`, w: 48, h: 64 },
 ];
+
+// ---------- UI στοιχεία (9-slice panels, κουμπιά, λωρίδα status bar) ----------
+DEFS.ui = [
+  { out: 'ui_panel', desc: `square dark gunmetal sci-fi UI panel frame with beveled riveted metal border and dark inset center, 9-slice interface panel${STYLE}`, w: 96, h: 96, bg: true },
+  { out: 'ui_button', desc: `wide dark gunmetal sci-fi UI button with beveled metal border, empty label area, interface element${STYLE}`, w: 96, h: 32, bg: true },
+  { out: 'ui_button_red', desc: `wide dark red-lit sci-fi UI button with beveled metal border and red glow, empty label area, interface element${STYLE}`, w: 96, h: 32, bg: true },
+  { out: 'ui_statusbar_tile', desc: `horizontally seamless dark gunmetal HUD status bar strip texture with rivets and recessed slots, tileable left to right${STYLE}`, w: 64, h: 36, bg: true },
+];
+
+/* ---------- animations: walk cycle + death ανά εχθρό ----------
+   Τρέχουν ΜΕΤΑ το βασικό batch (θέλουν τα enemy_X_walk1.png ως reference). */
+const ANIMS = [];
+for (const [name, [desc, size]] of Object.entries(ENEMIES)) {
+  ANIMS.push({
+    ref: `enemy_${name}_walk1`, size,
+    desc: desc + STYLE,
+    action: 'walking',
+    outs: [`enemy_${name}_walk1`, `enemy_${name}_walk2`,
+           `enemy_${name}_walk3`, `enemy_${name}_walk4`],
+  });
+  ANIMS.push({
+    ref: `enemy_${name}_walk1`, size,
+    desc: desc + STYLE,
+    action: 'dying, collapsing to the ground',
+    outs: [`enemy_${name}_die1`, `enemy_${name}_die2`,
+           `enemy_${name}_die3`, `enemy_${name}_die4`],
+  });
+}
+
+async function animate(a) {
+  const refPath = path.join(OUT, a.ref + '.png');
+  const reference = fs.readFileSync(refPath).toString('base64');
+  const body = {
+    image_size: { width: a.size, height: a.size },
+    description: a.desc,
+    action: a.action,
+    reference_image: { type: 'base64', base64: reference },
+  };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${API}/animate-with-text`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      console.log(`  ${a.outs[0]}: ${e.cause ? e.cause.code : e.message}, retry σε 15s…`);
+      await sleep(15000);
+      continue;
+    }
+    if (res.status === 429 || res.status >= 500) {
+      console.log(`  ${a.outs[0]}…: HTTP ${res.status}, retry σε 20s`);
+      await sleep(20000);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${a.outs[0]}: HTTP ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    const images = data.images || data.frames || [];
+    if (!images.length) throw new Error(`${a.outs[0]}: no frames (${JSON.stringify(data).slice(0, 200)})`);
+    for (let i = 0; i < a.outs.length && i < images.length; i++) {
+      const b64 = images[i].base64 || images[i];
+      fs.writeFileSync(path.join(OUT, a.outs[i] + '.png'), Buffer.from(b64, 'base64'));
+    }
+    console.log(`  ${a.action} × ${a.ref}: ${Math.min(images.length, a.outs.length)} frames OK`);
+    return;
+  }
+  throw new Error(`${a.outs[0]}: εξαντλήθηκαν οι προσπάθειες`);
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -143,12 +221,19 @@ async function generate(def) {
     image_size: { width: def.w, height: def.h },
     no_background: !def.bg,
   };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`${API}/generate-image-pixflux`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${API}/generate-image-pixflux`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      console.log(`  ${def.out}: ${e.cause ? e.cause.code : e.message}, retry σε 15s…`);
+      await sleep(15000);
+      continue;
+    }
     if (res.status === 429 || res.status >= 500) {
       console.log(`  ${def.out}: HTTP ${res.status}, retry σε 20s…`);
       await sleep(20000);
@@ -195,16 +280,35 @@ async function makeFlips(flips) {
   await browser.close();
 }
 
+async function safeBalance() {
+  try { return await balance(); } catch (e) { return '?'; }
+}
+
 (async () => {
   const what = process.argv[2] || 'all';
   fs.mkdirSync(OUT, { recursive: true });
+
+  if (what === 'animations') {
+    console.log(`PixelLab animations: ${ANIMS.length} κλήσεις. Balance: $${await safeBalance()}`);
+    for (const a of ANIMS) {
+      await animate(a);
+      await sleep(1500);
+    }
+    console.log(`Τέλος. Balance: $${await safeBalance()}`);
+    return;
+  }
+
   const groups = what === 'all' ? Object.keys(DEFS) : [what];
   const jobs = groups.flatMap(g => DEFS[g] || []);
-  console.log(`PixelLab: ${jobs.length} εικόνες. Balance: $${await balance()}`);
+  console.log(`PixelLab: ${jobs.length} εικόνες. Balance: $${await safeBalance()}`);
 
   const flips = [];
   for (const def of jobs) {
-    if (fs.existsSync(path.join(OUT, def.out + '.png')) && process.env.SKIP_EXISTING) {
+    const fpath = path.join(OUT, def.out + '.png');
+    const skipMin = parseInt(process.env.SKIP_NEWER_MIN || '0', 10);
+    const fresh = skipMin && fs.existsSync(fpath) &&
+      fs.statSync(fpath).mtimeMs > Date.now() - skipMin * 60000;
+    if (fresh || (fs.existsSync(fpath) && process.env.SKIP_EXISTING)) {
       console.log(`  ${def.out}: υπάρχει, skip`);
     } else {
       await generate(def);
@@ -213,5 +317,5 @@ async function makeFlips(flips) {
     if (def.flipTo) flips.push([def.out, def.flipTo]);
   }
   await makeFlips(flips);
-  console.log(`Τέλος. Balance: $${await balance()}`);
+  console.log(`Τέλος. Balance: $${await safeBalance()}`);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -83,7 +83,13 @@ const HUD = (() => {
     }
 
     // ---- status bar: DOOM-style μεταλλικό panel ----
-    if (Assets.ui.statusbar) {
+    if (Assets.ui.statusbarTile) {
+      // pixel-art λωρίδα, επαναλαμβανόμενη οριζόντια
+      const t = Assets.ui.statusbarTile;
+      for (let x = 0; x < W; x += t.width) {
+        ctx.drawImage(t, x, VH, t.width, BAR_H);
+      }
+    } else if (Assets.ui.statusbar) {
       ctx.drawImage(Assets.ui.statusbar, 0, VH, W, BAR_H);
     } else {
       ctx.fillStyle = '#2a2d33';

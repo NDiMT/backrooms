@@ -64,13 +64,15 @@ const Entities = (() => {
 
     sprite(tick) {
       const set = Assets.enemies[this.type];
-      if (this.state === 'dead') return set.death[2];
+      const death = set.death;
+      if (this.state === 'dead') return death[death.length - 1];
       if (this.state === 'dying') {
-        return set.death[Math.min(2, (this.deadT * 6) | 0)];
+        return death[Math.min(death.length - 1,
+          (this.deadT / 0.5 * death.length) | 0)];
       }
       if (this.state === 'pain') return set.pain;
       if (this.state === 'attack' && this.animT < 0.35) return set.attack;
-      return set.walk[((tick * 3) | 0) % 2];
+      return set.walk[((tick * 5) | 0) % set.walk.length];
     }
 
     hurt(dmg, game) {

@@ -424,6 +424,13 @@
   // φόρτωση PNG overrides από assets/ (AI-generated γραφικά, αν υπάρχουν)
   Assets.loadOverrides(() => {});
 
+  // pixel-art UI panels: ενεργοποίηση border-image μόνο αν υπάρχουν τα PNGs
+  {
+    const probe = new Image();
+    probe.onload = () => document.body.classList.add('px-ui');
+    probe.src = 'assets/ui_panel.png';
+  }
+
   // προφόρτωση pixel fonts ώστε να τα βλέπει και το canvas HUD
   if (document.fonts && document.fonts.load) {
     document.fonts.load('11px "Press Start 2P"');

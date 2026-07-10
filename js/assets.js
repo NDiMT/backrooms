@@ -959,13 +959,33 @@ const Assets = (() => {
   };
 
   for (const [name, e] of Object.entries(A.enemies)) {
-    // στο walk1 override ξαναϋπολογίζονται και τα παράγωγα frames
-    reg(`enemy_${name}_walk1`, img => {
-      e.walk[0] = img;
-      e.pain = painFrame(img);
-      e.death = deathFrames(img, BLOOD[name]);
-    });
-    reg(`enemy_${name}_walk2`, img => { e.walk[1] = img; });
+    // slots για walk cycle (έως 4 frames) και death animation (έως 4 frames)·
+    // τα αρχεία φορτώνουν async, οπότε ξαναχτίζουμε τα arrays σε κάθε άφιξη
+    const walkSlots = [null, null, null, null];
+    const dieSlots = [null, null, null, null];
+    const rebuildWalk = () => {
+      const frames = walkSlots.filter(Boolean);
+      if (frames.length) e.walk = frames;
+    };
+    const rebuildDeath = () => {
+      const frames = dieSlots.filter(Boolean);
+      if (frames.length) e.death = frames;
+    };
+    for (let n = 1; n <= 4; n++) {
+      reg(`enemy_${name}_walk${n}`, img => {
+        walkSlots[n - 1] = img;
+        rebuildWalk();
+        if (n === 1) {
+          // παράγωγα από το βασικό frame (αν δεν έρθουν die frames)
+          e.pain = painFrame(img);
+          if (!dieSlots.some(Boolean)) e.death = deathFrames(img, BLOOD[name]);
+        }
+      });
+      reg(`enemy_${name}_die${n}`, img => {
+        dieSlots[n - 1] = img;
+        rebuildDeath();
+      });
+    }
     reg(`enemy_${name}_attack`, img => { e.attack = img; });
   }
   for (const key of Object.keys(A.tex)) {
@@ -988,6 +1008,7 @@ const Assets = (() => {
   for (const key of Object.keys(A.projectiles)) reg(`proj_${key}`, img => { A.projectiles[key] = img; });
   reg('prop_terminal', img => { A.props.terminal = img; });
   reg('ui_statusbar', img => { A.ui.statusbar = img; });
+  reg('ui_statusbar_tile', img => { A.ui.statusbarTile = img; });
 
   A.OVERRIDE_KEYS = OVERRIDES.map(o => o.path);
 
