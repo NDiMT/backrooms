@@ -950,8 +950,19 @@ const Assets = (() => {
   const OVERRIDES = [];
   function reg(path, apply) { OVERRIDES.push({ path, apply }); }
 
+  const BLOOD = {
+    shambler: 'rgba(140,20,20,0.9)', spitter: 'rgba(140,140,20,0.9)',
+    drone: 'rgba(40,40,50,0.9)', heavy: 'rgba(80,80,90,0.9)',
+    warden: 'rgba(180,100,20,0.9)', boss: 'rgba(140,60,220,0.9)',
+  };
+
   for (const [name, e] of Object.entries(A.enemies)) {
-    reg(`enemy_${name}_walk1`, img => { e.walk[0] = img; });
+    // στο walk1 override ξαναϋπολογίζονται και τα παράγωγα frames
+    reg(`enemy_${name}_walk1`, img => {
+      e.walk[0] = img;
+      e.pain = painFrame(img);
+      e.death = deathFrames(img, BLOOD[name]);
+    });
     reg(`enemy_${name}_walk2`, img => { e.walk[1] = img; });
     reg(`enemy_${name}_attack`, img => { e.attack = img; });
   }
@@ -962,7 +973,12 @@ const Assets = (() => {
     });
   }
   for (const [name, w] of Object.entries(A.weapons)) {
-    reg(`weapon_${name}_idle`, img => { w.idle = img; });
+    // νέο idle → νέο muzzle flash + νέο εικονίδιο εδάφους
+    reg(`weapon_${name}_idle`, img => {
+      w.idle = img;
+      w.fire = muzzleFlash(img);
+      A.wpnIcons[name] = scaled(img, 0.45, 0.45);
+    });
     reg(`weapon_${name}_fire`, img => { w.fire = img; });
   }
   for (const key of Object.keys(A.pickups)) reg(`pickup_${key}`, img => { A.pickups[key] = img; });
