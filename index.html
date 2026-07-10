@@ -5,11 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>DEAD ZONE</title>
 <style>
+  @font-face {
+    font-family: 'Press Start 2P';
+    src: url('fonts/press-start-2p.woff2') format('woff2');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'VT323';
+    src: url('fonts/vt323.woff2') format('woff2');
+    font-display: swap;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box;
       -webkit-user-select: none; user-select: none;
       -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  body { font-family: 'Courier New', monospace; color: #cfd4e0;
+  body { font-family: 'VT323', 'Courier New', monospace; color: #cfd4e0;
          touch-action: none; }
 
   #game { position: absolute; inset: 0;
@@ -35,7 +45,8 @@
     position: absolute; left: 50%; top: 12%;
     transform: translateX(-50%);
     z-index: 9; pointer-events: none;
-    font-size: clamp(13px, 2.2vmin, 20px); letter-spacing: 0.1em;
+    font-family: 'VT323', monospace;
+    font-size: clamp(18px, 3vmin, 28px); letter-spacing: 0.06em;
     color: #e8e4c8; text-shadow: 0 0 8px #000, 0 0 3px #000;
     opacity: 0; transition: opacity 0.4s;
     text-align: center; max-width: 90vw;
@@ -44,14 +55,17 @@
     position: absolute; left: 50%; bottom: 27%;
     transform: translateX(-50%);
     z-index: 9; pointer-events: none;
-    font-size: clamp(12px, 2vmin, 17px); letter-spacing: 0.18em;
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(9px, 1.6vmin, 14px); letter-spacing: 0.08em;
     text-shadow: 0 0 8px #000;
     opacity: 0; transition: opacity 0.3s;
     white-space: nowrap;
   }
   #objective {
     position: absolute; left: 10px; top: 8px; z-index: 9; pointer-events: none;
-    font-size: clamp(10px, 1.7vmin, 14px); letter-spacing: 0.08em;
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(7px, 1.2vmin, 10px); letter-spacing: 0.05em;
+    line-height: 1.6;
     color: rgba(120, 230, 140, 0.75); text-shadow: 0 0 6px #000;
   }
 
@@ -66,32 +80,39 @@
   }
   .hidden { display: none !important; }
 
-  h1 { font-size: clamp(28px, 7.5vmin, 58px); letter-spacing: 0.22em;
-       font-weight: 900;
+  h1 { font-family: 'Press Start 2P', monospace;
+       font-size: clamp(22px, 5.5vmin, 44px); letter-spacing: 0.06em;
+       font-weight: 400; line-height: 1.25;
        color: #e8321e;
        text-shadow: 2px 2px 0 #5a0c04, 4px 4px 0 #200402,
                     0 0 34px rgba(232, 50, 30, 0.55);
        margin-bottom: 4px; }
-  h2 { font-size: clamp(17px, 3.6vmin, 28px); letter-spacing: 0.22em;
-       font-weight: 900;
+  h2 { font-family: 'Press Start 2P', monospace;
+       font-size: clamp(13px, 2.8vmin, 22px); letter-spacing: 0.05em;
+       font-weight: 400; line-height: 1.35;
        color: #e8321e;
        text-shadow: 1px 1px 0 #5a0c04, 2px 2px 0 #200402;
        margin-bottom: 16px; }
-  .sub { font-size: clamp(10px, 1.9vmin, 14px); letter-spacing: 0.4em;
+  .sub { font-family: 'Press Start 2P', monospace;
+         font-size: clamp(7px, 1.4vmin, 11px); letter-spacing: 0.25em;
          opacity: 0.55; margin-bottom: 18px; }
-  .lore { max-width: 640px; line-height: 1.65;
-          font-size: clamp(12px, 2vmin, 15px); opacity: 0.85;
+  .lore { max-width: 640px; line-height: 1.4;
+          font-family: 'VT323', monospace;
+          font-size: clamp(17px, 2.8vmin, 22px); opacity: 0.9;
           margin-bottom: 18px; }
-  .stats { font-size: clamp(11px, 1.9vmin, 14px); opacity: 0.65;
-           margin: 10px 0 18px; line-height: 1.8; }
-  .controls-hint { font-size: clamp(10px, 1.7vmin, 12px); opacity: 0.45;
-                   line-height: 1.9; margin-bottom: 18px; }
+  .stats { font-family: 'VT323', monospace;
+           font-size: clamp(16px, 2.6vmin, 20px); opacity: 0.7;
+           margin: 10px 0 18px; line-height: 1.6; }
+  .controls-hint { font-family: 'VT323', monospace;
+                   font-size: clamp(15px, 2.3vmin, 18px); opacity: 0.5;
+                   line-height: 1.6; margin-bottom: 18px; }
 
   /* DOOM-style κουμπιά: μεταλλικό bevel + έντονο κείμενο */
   button {
-    font-family: inherit; font-size: clamp(13px, 2.4vmin, 17px);
-    font-weight: 900;
-    letter-spacing: 0.18em; padding: 12px 34px; cursor: pointer;
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(9px, 1.8vmin, 13px);
+    font-weight: 400;
+    letter-spacing: 0.06em; padding: 14px 30px; cursor: pointer;
     background: linear-gradient(#3a3e46, #24262c 45%, #1a1c20);
     color: #d8dce6;
     text-shadow: 1px 1px 0 #000;
@@ -127,14 +148,17 @@
     transition: filter 0.12s, transform 0.1s, box-shadow 0.15s;
   }
   .card:hover, .card:active { filter: brightness(1.2); transform: translateY(-3px); }
-  .card h3 { font-size: clamp(12px, 2.1vmin, 15px); letter-spacing: 0.1em;
-             font-weight: 900;
+  .card h3 { font-family: 'Press Start 2P', monospace;
+             font-size: clamp(8px, 1.6vmin, 11px); letter-spacing: 0.04em;
+             font-weight: 400; line-height: 1.5;
              color: #ffd040; text-shadow: 1px 1px 0 #000;
              margin-bottom: 8px; }
-  .card p { font-size: clamp(10px, 1.8vmin, 12px); opacity: 0.75;
-            line-height: 1.5; margin-bottom: 4px; }
+  .card p { font-family: 'VT323', monospace;
+            font-size: clamp(14px, 2.3vmin, 17px); opacity: 0.8;
+            line-height: 1.35; margin-bottom: 4px; }
   .card .cost { display: block; margin-top: 8px; color: #50e0f0;
-                font-size: clamp(11px, 1.9vmin, 13px); letter-spacing: 0.12em; }
+                font-family: 'Press Start 2P', monospace;
+                font-size: clamp(7px, 1.4vmin, 10px); letter-spacing: 0.05em; }
   .card.disabled { opacity: 0.35; pointer-events: none; }
   /* rarity accents (κρατούν το bevel, αλλάζουν απόχρωση + λάμψη) */
   .card.rar1 { border-color: #4a9fff #0a2038 #0a2038 #4a9fff;
@@ -150,10 +174,12 @@
     filter: drop-shadow(0 0 6px rgba(0,0,0,0.8));
   }
 
-  .scrap-line { color: #50e0f0; font-size: clamp(12px, 2.2vmin, 16px);
-                letter-spacing: 0.15em; margin-bottom: 6px; }
-  .cores-line { color: #c080ff; font-size: clamp(12px, 2.2vmin, 16px);
-                letter-spacing: 0.15em; margin-bottom: 6px; }
+  .scrap-line { color: #50e0f0; font-family: 'Press Start 2P', monospace;
+                font-size: clamp(9px, 1.7vmin, 13px);
+                letter-spacing: 0.06em; margin-bottom: 6px; }
+  .cores-line { color: #c080ff; font-family: 'Press Start 2P', monospace;
+                font-size: clamp(9px, 1.7vmin, 13px);
+                letter-spacing: 0.06em; margin-bottom: 6px; }
 
   /* -------- touch controls -------- */
   #touch-controls { position: absolute; inset: 0; z-index: 12;
@@ -178,7 +204,8 @@
     position: absolute; right: 28px; bottom: 34px;
     width: 92px; height: 92px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 15px; letter-spacing: 0.15em; color: #ff6050;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px; letter-spacing: 0.04em; color: #ff6050;
     background: rgba(208, 48, 48, 0.12);
     border: 2px solid rgba(208, 48, 48, 0.5);
     touch-action: none; pointer-events: auto;
@@ -188,7 +215,8 @@
     position: absolute; right: 136px; bottom: 44px;
     width: 58px; height: 58px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 10px; letter-spacing: 0.1em; color: #cfd4e0;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px; letter-spacing: 0.03em; color: #cfd4e0;
     background: rgba(207, 212, 224, 0.08);
     border: 2px solid rgba(207, 212, 224, 0.3);
     touch-action: none; pointer-events: auto;
@@ -215,7 +243,8 @@
     display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 14px;
     background: #06080c; text-align: center;
-    font-size: 16px; letter-spacing: 0.15em;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px; letter-spacing: 0.05em; line-height: 1.8;
   }
   #rotate-prompt .icon { font-size: 44px;
     animation: rot 1.6s ease-in-out infinite; }

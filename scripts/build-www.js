@@ -7,7 +7,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const dest = path.join(root, 'www');
 
-const ENTRIES = ['index.html', 'js'];
+const ENTRIES = ['index.html', 'js', 'fonts'];
 const OPTIONAL = ['assets']; // PNG overrides για τα γραφικά, αν υπάρχουν
 
 function rmrf(p) {

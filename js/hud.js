@@ -30,7 +30,7 @@ const HUD = (() => {
 
   /* DOOM-style ψηφία: μαύρο περίγραμμα + έντονο χρώμα. */
   function doomText(ctx, text, x, y, px, color) {
-    ctx.font = `bold ${px}px monospace`;
+    ctx.font = `${px}px "Press Start 2P", monospace`;
     ctx.fillStyle = '#000';
     for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
       ctx.fillText(text, x + ox, y + oy);
@@ -99,19 +99,19 @@ const HUD = (() => {
 
     // ---- HP (μεγάλα κόκκινα DOOM digits) ----
     slot(ctx, 4, VH + 4, 58, 28);
-    doomText(ctx, String(Math.max(0, Math.ceil(p.hp))) + '%', 8, VH + 6, 15,
+    doomText(ctx, String(Math.max(0, Math.ceil(p.hp))) + '%', 8, VH + 8, 11,
       p.hp < p.maxHp * 0.3 ? '#ff2010' : '#e03a2a');
-    ctx.font = '7px monospace';
+    ctx.font = '10px VT323, monospace';
     ctx.fillStyle = '#7c828e';
-    ctx.fillText('HEALTH', 8, VH + 23);
+    ctx.fillText('HEALTH', 8, VH + 20);
     bar(ctx, 8, VH + 30, 50, p.hp, p.maxHp, '#c03030');
 
     // ---- ARMOR ----
     slot(ctx, 66, VH + 4, 40, 28);
-    doomText(ctx, String(Math.ceil(p.armor)), 70, VH + 8, 13, '#4a9fff');
-    ctx.font = '7px monospace';
+    doomText(ctx, String(Math.ceil(p.armor)), 70, VH + 9, 10, '#4a9fff');
+    ctx.font = '10px VT323, monospace';
     ctx.fillStyle = '#7c828e';
-    ctx.fillText('ARMOR', 70, VH + 24);
+    ctx.fillText('ARMOR', 70, VH + 22);
 
     // ---- πρόσωπο στο κέντρο, με κορνίζα ----
     const f = face(p, dt);
@@ -123,7 +123,7 @@ const HUD = (() => {
     const w = PlayerSys.weapon(p);
     const st = PlayerSys.stats(w, p.perks);
     slot(ctx, W / 2 + 22, VH + 4, 84, 28);
-    ctx.font = '7px monospace';
+    ctx.font = '10px VT323, monospace';
     if (w.element) {
       ctx.fillStyle = PlayerSys.ELEMENTS[w.element].color;
       ctx.fillText('●', W / 2 + 26, VH + 6);
@@ -132,8 +132,8 @@ const HUD = (() => {
     const nm = PlayerSys.BASES[w.base].name;
     ctx.fillText(nm.slice(0, 13), W / 2 + (w.element ? 34 : 26), VH + 6);
     const ammoStr = st.ammo ? String(p.ammo[st.ammo]) : '∞';
-    doomText(ctx, ammoStr, W / 2 + 26, VH + 15, 14, '#e03a2a');
-    ctx.font = '7px monospace';
+    doomText(ctx, ammoStr, W / 2 + 26, VH + 16, 11, '#e03a2a');
+    ctx.font = '10px VT323, monospace';
     ctx.fillStyle = '#7c828e';
     ctx.fillText(st.ammo ? st.ammo.toUpperCase() : 'AMMO', W / 2 + 58, VH + 17);
     let sub = '';
@@ -147,10 +147,10 @@ const HUD = (() => {
 
     // ---- SCRAP + DECK ----
     slot(ctx, W - 70, VH + 4, 66, 28);
-    doomText(ctx, String(p.scrap), W - 66, VH + 8, 12, '#50e0f0');
-    ctx.font = '7px monospace';
+    doomText(ctx, String(p.scrap), W - 66, VH + 9, 9, '#50e0f0');
+    ctx.font = '10px VT323, monospace';
     ctx.fillStyle = '#7c828e';
-    ctx.fillText('SCRAP', W - 66, VH + 24);
+    ctx.fillText('SCRAP', W - 66, VH + 22);
     ctx.fillStyle = '#67d080';
     ctx.fillText('D' + (game.deckIdx + 1), W - 18, VH + 8);
     if (game.wardenDead && game.deckIdx < 3) {

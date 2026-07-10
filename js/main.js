@@ -424,6 +424,12 @@
   // φόρτωση PNG overrides από assets/ (AI-generated γραφικά, αν υπάρχουν)
   Assets.loadOverrides(() => {});
 
+  // προφόρτωση pixel fonts ώστε να τα βλέπει και το canvas HUD
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load('11px "Press Start 2P"');
+    document.fonts.load('10px VT323');
+  }
+
   // ---------- update ----------
   function update(dt) {
     const p = game.player;
