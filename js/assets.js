@@ -12,14 +12,16 @@ const Assets = (() => {
     return c;
   }
 
-  /* Ζωγραφίζει char-grid pixel map. rows: array of strings, pal: {χαρακτήρας: χρώμα} */
+  /* Ζωγραφίζει char-grid pixel map. rows: array of strings, pal: {χαρακτήρας: χρώμα}
+     Ανώμαλα μήκη γραμμών αντιμετωπίζονται ως διαφάνεια. */
   function px(rows, pal, scale) {
-    const h = rows.length, w = rows[0].length;
+    const h = rows.length;
+    const w = Math.max(...rows.map(r => r.length));
     const c = cnv(w * scale, h * scale);
     const ctx = c.getContext('2d');
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const ch = rows[y][x];
+        const ch = rows[y][x] || '.';
         if (ch === '.' || ch === ' ') continue;
         ctx.fillStyle = pal[ch] || '#f0f';
         ctx.fillRect(x * scale, y * scale, scale, scale);
@@ -478,84 +480,136 @@ const Assets = (() => {
   ];
   const boltPal = { k: '#180404', r: '#e03020', R: '#ffb060' };
 
-  // ---------- ΟΠΛΑ πρώτου προσώπου (όψη από πίσω, με χέρια — scale 4) ----------
+  // ---------- ΟΠΛΑ πρώτου προσώπου (όψη από πίσω, με χέρια) ----------
+  // Διπλάσια ανάλυση (~40x27, scale 2) για λεπτομέρεια: σκίαση 3 τόνων,
+  // χαραγές, σκόπευτρα, λαβές, φωτεινά στοιχεία.
   const wpnPal = {
-    k: '#0c0c10', m: '#4c4c58', M: '#787888', d: '#2c2c34', D: '#08080a',
-    b: '#6a4420', B: '#8a5c30', y: '#e8c020', c: '#20d0e0', C: '#a0f0ff',
-    g: '#3a3a44', r: '#902020', s: '#c89058', S: '#e0aa70',
+    k: '#0b0b0f', D: '#15161c', d: '#242630', g: '#343744',
+    m: '#4a4e5e', M: '#6a7080', H: '#8e96a8',
+    b: '#5a3c1c', B: '#7a5528', W: '#96703c',
+    c: '#1898c8', C: '#40d8ff', E: '#b0f4ff',
+    y: '#e8c020', o: '#e07820', r: '#c03030',
+    s: '#a87848', S: '#c89058', T: '#e8b878',
   };
-  // 22 πλάτος × 16 ύψος το καθένα
+
   const pistolMap = [
-    '......................',
-    '......................',
-    '.........kkkk.........',
-    '........kMmmMk........',
-    '........kMmmMk........',
-    '........kMmmMk........',
-    '........kmddmk........',
-    '.......kkmddmkk.......',
-    '......kskmddmksk......',
-    '.....ksSkmmmmkSsk.....',
-    '.....ksSSkddkSSsk.....',
-    '.....ksSSSddSSSsk.....',
-    '......ksSSSSSSsk......',
-    '.......ksSSSSsk.......',
-    '........kssssk........',
-    '......................',
+    '........................................',
+    '..................kkkk..................',
+    '.................kHkkHk.................',
+    '.................kkMMkk.................',
+    '................kkkkkkkk................',
+    '...............kHMMMMMMHk...............',
+    '...............kMmmmmmmmk...............',
+    '...............kMdgdgdgdk...............',
+    '...............kMdgdgdgdk...............',
+    '...............kMdgdgdgdk...............',
+    '...............kMmmmmmmmk...............',
+    '...............kHMMMMMMHk...............',
+    '...............kkkkkkkkkk...............',
+    '...............kdDDDDDDDk...............',
+    '..............kkdDDrDDDdkk..............',
+    '.............kSskdDDDDDdksSk............',
+    '............ksSSkdddddddkSSsk...........',
+    '...........ksSTSkgggggggkSTSsk..........',
+    '...........ksSSSkkgggggkkSSSsk..........',
+    '...........ksSSSSkkkkkkkSSSSsk..........',
+    '...........ksSSTSSSSSSSSSTSSsk..........',
+    '............ksSSSSSSSSSSSSsk............',
+    '............ksSSSSSSSSSSSsk.............',
+    '.............ksSSSSSSSSSsk..............',
+    '..............ksssssssssk...............',
+    '...............kkkkkkkkk................',
+    '........................................',
   ];
+
   const shotgunMap = [
-    '......................',
-    '.........kkkk.........',
-    '........kdDDdk........',
-    '........kdmmdk........',
-    '........kdmmdk........',
-    '.......kkmmmmkk.......',
-    '......kBbbbbbbBk......',
-    '......kBbbbbbbBk......',
-    '.....kskbbbbbbksk.....',
-    '....ksSkkbbbbkkSsk....',
-    '....ksSSkmmmmkSSsk....',
-    '.....ksSSkmmkSSsk.....',
-    '......ksSSSSSSsk......',
-    '.......ksSSSSsk.......',
-    '........kssssk........',
-    '......................',
+    '........................................',
+    '................kkkkkkkk................',
+    '...............kHMMMMMMHk...............',
+    '..............kMmkDDDDkmMk..............',
+    '..............kMkDkkkkDkMk..............',
+    '..............kMkDkDDkDkMk..............',
+    '..............kMkDkkkkDkMk..............',
+    '..............kMmkDDDDkmMk..............',
+    '..............kHMkmmmmkMHk..............',
+    '..............kkkkkkkkkkkk..............',
+    '..............kMmgmmgmmgMk..............',
+    '..............kMmgmmgmmgMk..............',
+    '..............kkkkkkkkkkkk..............',
+    '.............kBWbbbbbbbbWBk.............',
+    '............kkBbbkbbbbkbbBkk............',
+    '..........kSskBbbkbbbbkbbBksSk..........',
+    '.........ksSSkBWbbbbbbbbWBkSSsk.........',
+    '........ksSTSSkkkkkkkkkkkkSSTSsk........',
+    '........ksSSSSSkdDDDDDDdkSSSSSsk........',
+    '........ksSSSSSkdDDDDDDdkSSSSSsk........',
+    '........ksSSTSSSkkkkkkkkSSTSSSsk........',
+    '.........ksSSSSSSSSSSSSSSSSSSsk.........',
+    '..........ksSSSSSSSSSSSSSSSsk...........',
+    '...........ksSSSSSSSSSSSSsk.............',
+    '............kssssssssssssk..............',
+    '.............kkkkkkkkkkkk...............',
+    '........................................',
   ];
+
   const rifleMap = [
-    '......................',
-    '........kkkkkk........',
-    '.......kMmmmmMk.......',
-    '.......kMmCcmMk.......',
-    '.......kMmcCmMk.......',
-    '.......kMmCcmMk.......',
-    '......kkmmmmmmkk......',
-    '.....kskmddddmksk.....',
-    '....ksSkmddddmkSsk....',
-    '....ksSSkmmmmkSSsk....',
-    '.....ksSSkddkSSsk.....',
-    '......ksSSSSSSsk......',
-    '.......ksSSSSsk.......',
-    '........kssssk........',
-    '......................',
-    '......................',
+    '........................................',
+    '..............kkkkkkkkkkkk..............',
+    '.............kHMMMMMMMMMMHk.............',
+    '.............kMmmkkkkkkmmMk.............',
+    '.............kMmkCECCECkmMk.............',
+    '.............kMmkcCcccCckmMk............',
+    '.............kMmkCcCCcCCkmMk............',
+    '.............kMmkcCcccCckmMk............',
+    '.............kMmkkkkkkkkmMk.............',
+    '.............kMmmgmmgmmgmMk.............',
+    '.............kMdgdgdgdgddMk.............',
+    '.............kkkkkkkkkkkkkk.............',
+    '.............kdDkyoyokDDDdk.............',
+    '.............kdDkkkkkkDDDdk.............',
+    '............kkdDDDDDDDDDdkk.............',
+    '..........kSskdddddddddddksSk...........',
+    '.........ksSSkgggggggggggkSSsk..........',
+    '........ksSTSkkgggggggggkkSTSsk.........',
+    '........ksSSSSkkkkkkkkkkkSSSSsk.........',
+    '........ksSSSSSSSSSSSSSSSSSSSsk.........',
+    '........ksSSTSSSSSSSSSSSSTSSSsk.........',
+    '.........ksSSSSSSSSSSSSSSSSsk...........',
+    '..........ksSSSSSSSSSSSSSsk.............',
+    '...........ksSSSSSSSSSSsk...............',
+    '............kssssssssssk................',
+    '.............kkkkkkkkkk.................',
+    '........................................',
   ];
+
   const launcherMap = [
-    '......................',
-    '.......kkkkkkkk.......',
-    '......kMMMMMMMMk......',
-    '.....kMmcCCCCcmMk.....',
-    '.....kMmccccccmMk.....',
-    '.....kMmcCCCCcmMk.....',
-    '.....kMmmmmmmmmMk.....',
-    '.....kkkmmddmmkkk.....',
-    '....kskmmddddmmksk....',
-    '...ksSkmmddddmmkSsk...',
-    '...ksSSkkmmmmkkSSsk...',
-    '....ksSSSkddkSSSsk....',
-    '.....ksSSSSSSSSsk.....',
-    '......ksSSSSSSsk......',
-    '.......kssssssk.......',
-    '......................',
+    '........................................',
+    '.............kkkkkkkkkkkkkk.............',
+    '............kHMMMMMMMMMMMMHk............',
+    '...........kMmkkkkkkkkkkkkmMk...........',
+    '...........kMkDDdDDDDDDdDDkMk...........',
+    '...........kMkDkkkkkkkkkkDkMk...........',
+    '...........kMkDkcCCEECCckDkMk...........',
+    '...........kMkDkCcEEEEcCkDkMk...........',
+    '...........kMkDkcCCEECCckDkMk...........',
+    '...........kMkDkkkkkkkkkkDkMk...........',
+    '...........kMkDDdDDDDDDdDDkMk...........',
+    '...........kMmkkkkkkkkkkkkmMk...........',
+    '...........kHMyoyoyoyoyoyoMHk...........',
+    '...........kkkkkkkkkkkkkkkkkk...........',
+    '............kMmmgmmgmmgmmgMk............',
+    '............kkkkkkkkkkkkkkkk............',
+    '..........kSskdDDDDDDDDDDdksSk..........',
+    '.........ksSSkdddddddddddDkSSsk.........',
+    '........ksSTSkgggggggggggggkSTSsk.......',
+    '........ksSSSkkgggggggggggkkSSSsk.......',
+    '........ksSSSSkkkkkkkkkkkkkSSSSsk.......',
+    '........ksSSTSSSSSSSSSSSSSSTSSSsk.......',
+    '.........ksSSSSSSSSSSSSSSSSSSsk.........',
+    '..........ksSSSSSSSSSSSSSSSsk...........',
+    '...........ksSSSSSSSSSSSSsk.............',
+    '............kssssssssssssk..............',
+    '.............kkkkkkkkkkkk...............',
   ];
 
   function muzzleFlash(base) {
@@ -711,7 +765,7 @@ const Assets = (() => {
     };
 
     function weapon(map) {
-      const idle = px(map, wpnPal, 4);
+      const idle = px(map, wpnPal, 2);
       return { idle, fire: muzzleFlash(idle) };
     }
     A.weapons = {
