@@ -612,6 +612,146 @@ const Assets = (() => {
     '.............kkkkkkkkkkkk...............',
   ];
 
+  const smgMap = [
+    '........................................',
+    '..................kkkk..................',
+    '.................kHmmHk.................',
+    '.................kkkkkk.................',
+    '................kHMMMMHk................',
+    '................kMmmmmmk................',
+    '................kMdgdgdk................',
+    '................kMmmmmmk................',
+    '...............kkkkkkkkk................',
+    '...............kdDDDDDDk................',
+    '..............kkdDrDDDdkk...............',
+    '.............kSskdDDDDdksSk.............',
+    '............ksSSkddddddkSSsk............',
+    '...........ksSTSkgggggkkSTSsk...........',
+    '...........ksSSSkkgggkkSSSSsk...........',
+    '...........ksSSSSkkkkkSSSSSsk...........',
+    '...........ksSSTSSkDkSSTSSsk............',
+    '............ksSSSSkDkSSSSsk.............',
+    '............ksSSSSkDkSSSsk..............',
+    '.............ksSSSkkkSSsk...............',
+    '..............ksssssssk.................',
+    '...............kkkkkkk..................',
+    '........................................',
+  ];
+
+  const handcannonMap = [
+    '........................................',
+    '.................kkkkkk.................',
+    '................kHkkkkHk................',
+    '................kkMMMMkk................',
+    '...............kHMMMMMMHk...............',
+    '...............kMmmmmmmmk...............',
+    '...............kMdgdgdgdk...............',
+    '...............kMdgdgdgdk...............',
+    '...............kMmmmmmmmk...............',
+    '..............kkHMMMMMMHkk..............',
+    '.............kmkkkkkkkkkkmk.............',
+    '.............kmDdDDDDDDdDmk.............',
+    '.............kmDdDDrDDDdDmk.............',
+    '.............kkkdDDDDDDdkkk.............',
+    '............kSskdDDDDDDdksSk............',
+    '...........ksSSkddddddddkSSsk...........',
+    '..........ksSTSkggggggggkSTSsk..........',
+    '..........ksSSSkkggggggkkSSSsk..........',
+    '..........ksSSSSkkkkkkkkSSSSsk..........',
+    '..........ksSSTSSSSSSSSSTSSSsk..........',
+    '...........ksSSSSSSSSSSSSSsk............',
+    '............ksSSSSSSSSSSsk..............',
+    '.............kssssssssssk...............',
+    '..............kkkkkkkkkk................',
+    '........................................',
+  ];
+
+  const railgunMap = [
+    '........................................',
+    '..............kk........kk..............',
+    '.............kHMk......kMHk.............',
+    '.............kMmk.CEC..kmMk.............',
+    '.............kMmk.ECE..kmMk.............',
+    '.............kMmk.CEC..kmMk.............',
+    '.............kMmk......kmMk.............',
+    '.............kMmkkkkkkkkmMk.............',
+    '.............kMmmCCCCCCmmMk.............',
+    '.............kMmmccccccmmMk.............',
+    '.............kMdmmmmmmmmdMk.............',
+    '.............kkkkkkkkkkkkkk.............',
+    '.............kdDkyoyoykDDdk.............',
+    '.............kdDkkkkkkkDDdk.............',
+    '............kkdDDDDDDDDDdkk.............',
+    '..........kSskdddddddddddksSk...........',
+    '.........ksSSkgggggggggggkSSsk..........',
+    '........ksSTSkkgggggggggkkSTSsk.........',
+    '........ksSSSSkkkkkkkkkkkSSSSsk.........',
+    '........ksSSSSSSSSSSSSSSSSSSSsk.........',
+    '........ksSSTSSSSSSSSSSSSTSSSsk.........',
+    '.........ksSSSSSSSSSSSSSSSSsk...........',
+    '..........ksSSSSSSSSSSSSSsk.............',
+    '...........ksSSSSSSSSSSsk...............',
+    '............kssssssssssk................',
+    '.............kkkkkkkkkk.................',
+    '........................................',
+  ];
+
+  const incineratorMap = [
+    '........................................',
+    '................kkkkkkkk................',
+    '...............kdDDDDDDdk...............',
+    '...............kDkkkkkkDk...............',
+    '...............kDkoOOokDk...............'.replace(/O/g, 'o'),
+    '...............kDkoyyokDk...............',
+    '...............kDkoOOokDk...............'.replace(/O/g, 'o'),
+    '...............kDkkkkkkDk...............',
+    '..............kkdDDDDDDdkk..............',
+    '.............kHMMMMMMMMMMHk.............',
+    '.............kMmkryrkkmmmMk.............',
+    '.............kMmkkkkkkmmmMk.............',
+    '.............kMdmmmmmmmmdMk.............',
+    '.............kkkkkkkkkkkkkk.............',
+    '............kSskdDDDDDDDdksSk...........',
+    '...........ksSSkdddddddddkSSsk..........',
+    '..........ksSTSkgggggggggkSTSsk.........',
+    '..........ksSSSkkgggggggkkSSSsk.........',
+    '..........ksSSSSkkkkkkkkkSSSSsk.........',
+    '..........ksSSTSSSSSSSSSSTSSSsk.........',
+    '...........ksSSSSSSSSSSSSSSsk...........',
+    '............ksSSSSSSSSSSSsk.............',
+    '.............ksssssssssssk..............',
+    '..............kkkkkkkkkkk...............',
+    '........................................',
+  ];
+
+  const arccasterMap = [
+    '........................................',
+    '............kkk..........kkk............',
+    '...........kHMk..........kMHk...........',
+    '...........kMmk...C..E...kmMk...........',
+    '...........kMmk..E.C..C..kmMk...........',
+    '...........kMmk.C..E.E...kmMk...........',
+    '...........kMmk..........kmMk...........',
+    '...........kMmkk........kkmMk...........',
+    '...........kMmmkkkkkkkkkkmmMk...........',
+    '...........kMmmmCCCCCCCCmmmMk...........',
+    '...........kMdmmccccccccmmdMk...........',
+    '...........kkkkkkkkkkkkkkkkkk...........',
+    '..............kdDkCcCkDDdk..............',
+    '..............kdDkkkkkDDdk..............',
+    '.............kkdDDDDDDDdkk..............',
+    '...........kSskdddddddddksSk............',
+    '..........ksSSkgggggggggkSSsk...........',
+    '.........ksSTSkkgggggggkkSTSsk..........',
+    '.........ksSSSSkkkkkkkkkSSSSsk..........',
+    '.........ksSSTSSSSSSSSSSTSSSsk..........',
+    '..........ksSSSSSSSSSSSSSSsk............',
+    '...........ksSSSSSSSSSSSsk..............',
+    '............ksssssssssssk...............',
+    '.............kkkkkkkkkkk................',
+    '........................................',
+  ];
+
   function muzzleFlash(base) {
     const c = cnv(base.width, base.height);
     const ctx = c.getContext('2d');
@@ -747,21 +887,26 @@ const Assets = (() => {
 
     A.pickups = {
       medkit: px(medkitMap, pickPal, 3),
-      shells: px(shellsMap, pickPal, 3),
+      rounds: px(shellsMap, pickPal, 3),
       cells: px(cellsMap, pickPal, 3),
       scrap: px(scrapMap, pickPal, 3),
       core: px(coreMap, pickPal, 3),
-      wShotgun: px(shotgunMap, wpnPal, 2),
-      wRifle: px(rifleMap, wpnPal, 2),
-      wLauncher: px(launcherMap, wpnPal, 2),
     };
     A.props = {
       terminal: px(termMap, termPal, 4),
     };
+    const flameMap = [
+      '.kok.',
+      'koYok'.replace('Y', 'y'),
+      'kyYyk'.replace('Y', 'y'),
+      '.kyk.',
+    ];
+    const flamePal = { k: '#1c0c04', o: '#e05010', y: '#ffb030' };
     A.projectiles = {
       acid: px(acidMap, acidPal, 3),
       plasma: px(plasmaMap, plasmaPal, 3),
       bolt: px(boltMap, boltPal, 3),
+      flame: px(flameMap, flamePal, 3),
     };
 
     function weapon(map) {
@@ -770,10 +915,20 @@ const Assets = (() => {
     }
     A.weapons = {
       pistol: weapon(pistolMap),
+      smg: weapon(smgMap),
       shotgun: weapon(shotgunMap),
+      handcannon: weapon(handcannonMap),
       rifle: weapon(rifleMap),
+      railgun: weapon(railgunMap),
+      incinerator: weapon(incineratorMap),
+      arccaster: weapon(arccasterMap),
       launcher: weapon(launcherMap),
     };
+    // μικρά εικονίδια εδάφους για weapon pickups
+    A.wpnIcons = {};
+    for (const [key, w] of Object.entries(A.weapons)) {
+      A.wpnIcons[key] = scaled(w.idle, 0.45, 0.45);
+    }
 
     A.face = {
       ok: px(faceOk, facePal, 3),

@@ -1,83 +1,130 @@
-/* ΝΕΚΡΗ ΖΩΝΗ — Roguelike layer: perks ανά deck, καταστήματα, meta-progression. */
+/* DEAD ZONE — Roguelite layer: mixed rewards (perks + weapon drops with
+   elements/rarities), shops with weapon upgrades & mods, meta-progression. */
 
 const Rogue = (() => {
 
   const DECK_NAMES = [
-    'DECK 1 — ΚΡΥΟΘΑΛΑΜΟΙ',
-    'DECK 2 — ΜΗΧΑΝΟΣΤΑΣΙΟ',
-    'DECK 3 — ΥΔΡΟΠΟΝΙΚΑ',
-    'DECK 4 — ΠΥΡΗΝΑΣ ΤΟΥ ΩΡΙΩΝ',
+    'DECK 1 — CRYOGENICS',
+    'DECK 2 — ENGINEERING',
+    'DECK 3 — HYDROPONICS',
+    'DECK 4 — ORION CORE',
   ];
 
-  // ---------- PERKS (επιλογή 1 από 3 μεταξύ decks) ----------
+  // ---------- PERKS ----------
   const PERKS = [
-    { id: 'dmg', name: 'ΘΕΡΜΑ ΠΥΡΑ', desc: '+15% ζημιά',
+    { id: 'dmg', name: 'HOT LOADS', desc: '+15% damage',
       apply: p => { p.perks.dmgMul *= 1.15; } },
-    { id: 'rate', name: 'ΓΡΗΓΟΡΗ ΣΚΑΝΔΑΛΗ', desc: '+12% ταχυβολία',
+    { id: 'rate', name: 'RAPID CYCLING', desc: '+12% fire rate',
       apply: p => { p.perks.rateMul *= 0.88; } },
-    { id: 'hp', name: 'ΕΝΙΣΧΥΜΕΝΟΣ ΚΛΩΝΟΣ', desc: '+25 μέγιστο HP (και γέμισμα)',
+    { id: 'hp', name: 'REINFORCED CLONE', desc: '+25 max HP (and full heal)',
       apply: p => { p.maxHp += 25; p.hp = p.maxHp; } },
-    { id: 'speed', name: 'ΣΕΡΒΟ ΑΡΘΡΩΣΕΙΣ', desc: '+10% ταχύτητα',
+    { id: 'speed', name: 'SERVO JOINTS', desc: '+10% move speed',
       apply: p => { p.perks.speedMul *= 1.10; } },
-    { id: 'vamp', name: 'ΑΙΜΟΡΡΟΦΗΞΙΑ', desc: '+2 HP ανά σκοτωμό',
+    { id: 'vamp', name: 'HEMOSYNTHESIS', desc: '+2 HP per kill',
       apply: p => { p.perks.vamp += 2; } },
-    { id: 'scrap', name: 'ΣΥΛΛΕΚΤΗΣ', desc: '+30% scrap από εχθρούς',
+    { id: 'scrap', name: 'SCAVENGER', desc: '+30% scrap from enemies',
       apply: p => { p.perks.scrapMul *= 1.3; } },
-    { id: 'armor', name: 'ΠΛΑΚΕΣ ΤΙΤΑΝΙΟΥ', desc: '+50 πανοπλία τώρα',
+    { id: 'armor', name: 'TITANIUM PLATES', desc: '+50 armor now',
       apply: p => { p.armor = Math.min(100, p.armor + 50); } },
-    { id: 'ammo', name: 'ΑΠΟΘΗΚΕΣ', desc: '+10 φυσίγγια, +30 κελιά',
-      apply: p => { p.ammo.shells += 10; p.ammo.cells += 30; } },
+    { id: 'ammo', name: 'DEEP POCKETS', desc: '+30 rounds, +30 cells',
+      apply: p => { p.ammo.rounds += 30; p.ammo.cells += 30; } },
   ];
 
-  function pickPerks(rand) {
+  // ---------- τυχαίο όπλο (element/rarity κλιμακώνουν με το βάθος) ----------
+  function randomWeapon(depth, rand) {
+    const base = PlayerSys.DROP_POOL[(rand() * PlayerSys.DROP_POOL.length) | 0];
+    let element = null;
+    if (!PlayerSys.BASES[base].forceElement && rand() < 0.35 + depth * 0.15) {
+      element = ['fire', 'shock', 'cryo'][(rand() * 3) | 0];
+    }
+    const r = rand();
+    const rarity = r < 0.55 - depth * 0.08 ? 0 : (r < 0.88 ? 1 : 2);
+    return PlayerSys.makeWeapon(base, element, rarity);
+  }
+
+  /* 3 κάρτες αμοιβής: τουλάχιστον 1 perk, οι άλλες perk ή όπλο. */
+  function pickRewards(depth, rand) {
     const pool = PERKS.slice();
-    const out = [];
-    for (let i = 0; i < 3 && pool.length; i++) {
-      out.push(pool.splice((rand() * pool.length) | 0, 1)[0]);
+    const takePerk = () =>
+      ({ kind: 'perk', perk: pool.splice((rand() * pool.length) | 0, 1)[0] });
+    const out = [takePerk()];
+    for (let i = 0; i < 2; i++) {
+      if (rand() < 0.55) out.push({ kind: 'weapon', inst: randomWeapon(depth, rand) });
+      else out.push(takePerk());
+    }
+    // ανακάτεμα
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = (rand() * (i + 1)) | 0;
+      [out[i], out[j]] = [out[j], out[i]];
     }
     return out;
   }
 
   // ---------- SHOP ----------
-  const SHOP_ITEMS = [
-    { id: 'medkit', name: 'ΙΑΤΡΙΚΟ ΚΙΤ', desc: '+50 HP', cost: 30,
-      can: p => p.hp < p.maxHp,
-      apply: p => { p.hp = Math.min(p.maxHp, p.hp + 50); } },
-    { id: 'armor', name: 'ΠΑΝΟΠΛΙΑ', desc: '+50 πανοπλία', cost: 40,
-      can: p => p.armor < 100,
-      apply: p => { p.armor = Math.min(100, p.armor + 50); } },
-    { id: 'shells', name: 'ΦΥΣΙΓΓΙΑ x10', desc: 'για την καραμπίνα', cost: 25,
-      can: () => true,
-      apply: p => { p.ammo.shells += 10; } },
-    { id: 'cells', name: 'ΚΕΛΙΑ x25', desc: 'για rifle/launcher', cost: 25,
-      can: () => true,
-      apply: p => { p.ammo.cells += 25; } },
-    { id: 'shotgun', name: 'ΚΑΡΑΜΠΙΝΑ', desc: '+12 φυσίγγια', cost: 80,
-      can: p => !p.weapons.includes('shotgun'),
-      apply: p => { p.weapons.push('shotgun'); p.ammo.shells += 12;
-                    PlayerSys.switchWeapon(p, 'shotgun'); } },
-    { id: 'rifle', name: 'PULSE RIFLE', desc: '+40 κελιά', cost: 120,
-      can: p => !p.weapons.includes('rifle'),
-      apply: p => { p.weapons.push('rifle'); p.ammo.cells += 40;
-                    PlayerSys.switchWeapon(p, 'rifle'); } },
-    { id: 'launcher', name: 'PLASMA LAUNCHER', desc: '+24 κελιά', cost: 160,
-      can: p => !p.weapons.includes('launcher'),
-      apply: p => { p.weapons.push('launcher'); p.ammo.cells += 24; } },
-  ];
+  /* Τα items παράγονται δυναμικά ώστε upgrade/mod να αφορούν το τρέχον όπλο. */
+  function shopItems(p, game) {
+    const w = PlayerSys.weapon(p);
+    const wName = PlayerSys.displayName(w);
+    const items = [
+      { id: 'medkit', name: 'MEDKIT', desc: '+50 HP', cost: 30,
+        can: () => p.hp < p.maxHp,
+        apply: () => { p.hp = Math.min(p.maxHp, p.hp + 50); } },
+      { id: 'armor', name: 'ARMOR PLATING', desc: '+50 armor', cost: 40,
+        can: () => p.armor < 100,
+        apply: () => { p.armor = Math.min(100, p.armor + 50); } },
+      { id: 'rounds', name: 'ROUNDS x25', desc: 'kinetic ammunition', cost: 25,
+        can: () => true,
+        apply: () => { p.ammo.rounds += 25; } },
+      { id: 'cells', name: 'CELLS x25', desc: 'energy ammunition', cost: 25,
+        can: () => true,
+        apply: () => { p.ammo.cells += 25; } },
+      { id: 'crate', name: 'WEAPON CRATE', desc: 'random weapon drop', cost: 90,
+        can: () => true,
+        apply: () => {
+          const inst = randomWeapon(game.deckIdx, Math.random);
+          return 'ACQUIRED: ' + PlayerSys.giveWeapon(p, inst, game);
+        } },
+    ];
+    // αναβάθμιση τρέχοντος όπλου
+    if (w.level < PlayerSys.MAX_LEVEL) {
+      const cost = 45 + w.level * 35;
+      items.push({
+        id: 'upgrade', name: 'UPGRADE: ' + wName,
+        desc: `+15% damage (level ${w.level + 1}/${PlayerSys.MAX_LEVEL})`,
+        cost,
+        can: () => true,
+        apply: () => { w.level++; return 'UPGRADED: ' + PlayerSys.displayName(w); },
+      });
+    }
+    // εγκατάσταση mod στο τρέχον όπλο
+    if (w.mods.length < PlayerSys.MAX_MODS) {
+      const available = PlayerSys.MODS.filter(m => !w.mods.includes(m.id));
+      if (available.length) {
+        const m = available[(Math.random() * available.length) | 0];
+        items.push({
+          id: 'mod', name: 'MOD: ' + m.name,
+          desc: m.desc + ' → ' + wName, cost: 60,
+          can: () => true,
+          apply: () => { w.mods.push(m.id); return 'INSTALLED: ' + m.name; },
+        });
+      }
+    }
+    return items;
+  }
 
   // ---------- META-PROGRESSION (localStorage) ----------
   const META_KEY = 'nz_meta_v1';
 
   const META_UPGRADES = [
-    { id: 'hp', name: 'ΓΟΝΙΔΙΑ ΑΝΤΟΧΗΣ', desc: '+25 HP εκκίνησης / επίπεδο',
+    { id: 'hp', name: 'ENDURANCE GENES', desc: '+25 starting HP / level',
       max: 3, cost: lvl => 3 + lvl * 2 },
-    { id: 'dmg', name: 'ΜΝΗΜΗ ΜΑΧΗΣ', desc: '+10% ζημιά / επίπεδο',
+    { id: 'dmg', name: 'COMBAT MEMORY', desc: '+10% damage / level',
       max: 3, cost: lvl => 4 + lvl * 2 },
-    { id: 'speed', name: 'ΑΝΤΑΝΑΚΛΑΣΤΙΚΑ', desc: '+8% ταχύτητα / επίπεδο',
+    { id: 'speed', name: 'REFLEX BOOST', desc: '+8% move speed / level',
       max: 2, cost: lvl => 3 + lvl * 2 },
-    { id: 'shotgun', name: 'ΚΡΥΜΜΕΝΗ ΚΑΡΑΜΠΙΝΑ', desc: 'ξεκινάς με καραμπίνα',
+    { id: 'shotgun', name: 'STASHED SHOTGUN', desc: 'start with a shotgun',
       max: 1, cost: () => 6 },
-    { id: 'armor', name: 'ΘΩΡΑΚΑΣ ΚΛΩΝΟΥ', desc: 'ξεκινάς με 50 πανοπλία',
+    { id: 'armor', name: 'CLONE PLATING', desc: 'start with 50 armor',
       max: 1, cost: () => 5 },
   ];
 
@@ -85,25 +132,25 @@ const Rogue = (() => {
     try {
       const m = JSON.parse(localStorage.getItem(META_KEY));
       if (m && m.upgrades) return m;
-    } catch (e) { /* κατεστραμμένο αποθηκευμένο state — ξεκίνα καθαρά */ }
+    } catch (e) { /* κατεστραμμένο state — καθαρή αρχή */ }
     return { cores: 0, bestDeck: 0, runs: 0, wins: 0, upgrades: {} };
   }
 
   function saveMeta(meta) {
     try { localStorage.setItem(META_KEY, JSON.stringify(meta)); }
-    catch (e) { /* π.χ. private mode — το παιχνίδι συνεχίζει χωρίς save */ }
+    catch (e) { /* private mode — συνεχίζουμε χωρίς save */ }
   }
 
-  /* Πυρήνες που κερδίζονται στο τέλος ενός run. */
   function coresEarned(run) {
-    let c = run.deckIdx + 1;              // πόσο βαθιά έφτασες
+    let c = run.deckIdx + 1;
     c += Math.floor(run.kills / 12);
     if (run.won) c += 6;
     return c;
   }
 
   return {
-    DECK_NAMES, PERKS, SHOP_ITEMS, META_UPGRADES,
-    pickPerks, loadMeta, saveMeta, coresEarned,
+    DECK_NAMES, PERKS, META_UPGRADES,
+    randomWeapon, pickRewards, shopItems,
+    loadMeta, saveMeta, coresEarned,
   };
 })();

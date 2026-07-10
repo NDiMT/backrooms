@@ -1,14 +1,15 @@
-/* ΝΕΚΡΗ ΖΩΝΗ — HUD: Doom-style μπάρα κατάστασης με πρόσωπο (mugshot),
-   crosshair, minimap. Ζωγραφίζεται μέσα στο low-res canvas. */
+/* DEAD ZONE — HUD: Doom-style status bar with reactive mugshot, weapon
+   readout (name/element/rarity), hit markers, minimap. */
 
 const HUD = (() => {
   const W = Engine.W, H = Engine.H, VH = Engine.VH;
   const BAR_H = H - VH; // 36
 
-  let grinT = 0, painT = 0;
+  let grinT = 0, painT = 0, hitT = 0, lowPulse = 0;
 
   function notifyPickup() { grinT = 1.0; }
   function notifyPain() { painT = 0.6; }
+  function hitmarker() { hitT = 0.12; }
 
   function face(p, dt) {
     grinT = Math.max(0, grinT - dt);
@@ -29,13 +30,34 @@ const HUD = (() => {
 
   function render(ctx, game, dt) {
     const p = game.player;
+    hitT = Math.max(0, hitT - dt);
+    lowPulse += dt * 4;
 
-    // ---- crosshair ----
+    // ---- crosshair (+ hit marker X) ----
     ctx.fillStyle = 'rgba(240,240,220,0.85)';
     ctx.fillRect(W / 2 - 1, VH / 2 - 4, 2, 3);
     ctx.fillRect(W / 2 - 1, VH / 2 + 1, 2, 3);
     ctx.fillRect(W / 2 - 4, VH / 2 - 1, 3, 2);
     ctx.fillRect(W / 2 + 1, VH / 2 - 1, 3, 2);
+    if (hitT > 0) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.lineWidth = 1;
+      const c = W / 2, m = VH / 2, a = 3, b = 7;
+      ctx.beginPath();
+      ctx.moveTo(c - b, m - b); ctx.lineTo(c - a, m - a);
+      ctx.moveTo(c + b, m - b); ctx.lineTo(c + a, m - a);
+      ctx.moveTo(c - b, m + b); ctx.lineTo(c - a, m + a);
+      ctx.moveTo(c + b, m + b); ctx.lineTo(c + a, m + a);
+      ctx.stroke();
+    }
+
+    // ---- low-HP pulse στο περίγραμμα της 3D όψης ----
+    if (p.hp > 0 && p.hp < p.maxHp * 0.3) {
+      const a = 0.16 + Math.abs(Math.sin(lowPulse)) * 0.22;
+      ctx.strokeStyle = `rgba(200,30,30,${a.toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, W - 3, VH - 3);
+    }
 
     // ---- status bar ----
     ctx.fillStyle = '#23262e';
@@ -52,45 +74,66 @@ const HUD = (() => {
     ctx.font = '7px monospace';
     ctx.fillStyle = '#8a8f9c';
     ctx.fillText('HP', 8, VH + 24);
-    bar(ctx, 30, VH + 26, 34, p.hp, p.maxHp, '#c03030');
+    bar(ctx, 26, VH + 26, 34, p.hp, p.maxHp, '#c03030');
 
     // ARMOR
     ctx.font = 'bold 12px monospace';
     ctx.fillStyle = '#7ac0e8';
-    ctx.fillText(Math.ceil(p.armor), 72, VH + 8);
+    ctx.fillText(Math.ceil(p.armor), 68, VH + 8);
     ctx.font = '7px monospace';
     ctx.fillStyle = '#8a8f9c';
-    ctx.fillText('ARM', 72, VH + 24);
+    ctx.fillText('ARM', 68, VH + 24);
 
     // ---- πρόσωπο στο κέντρο ----
     const f = face(p, dt);
     ctx.drawImage(f, W / 2 - f.width / 2, VH + (BAR_H - f.height) / 2);
 
-    // AMMO
-    const w = PlayerSys.WEAPONS[p.current];
-    const ammoStr = w.ammoType ? String(p.ammo[w.ammoType]) : '∞';
-    ctx.font = 'bold 14px monospace';
+    // ---- WEAPON readout (δεξιά του προσώπου, συμπαγές για να μην
+    //      πατάει στο SCRAP) ----
+    const w = PlayerSys.weapon(p);
+    const st = PlayerSys.stats(w, p.perks);
+    ctx.font = '7px monospace';
+    // κουκκίδα element + όνομα βάσης
+    if (w.element) {
+      ctx.fillStyle = PlayerSys.ELEMENTS[w.element].color;
+      ctx.fillText('●', W / 2 + 26, VH + 5);
+    }
+    ctx.fillStyle = PlayerSys.RARITIES[w.rarity].color;
+    const nm = PlayerSys.BASES[w.base].name;
+    ctx.fillText(nm.slice(0, 15), W / 2 + (w.element ? 34 : 26), VH + 5);
+    // γραμμή 2: rarity/level/mods
+    let sub = '';
+    if (w.rarity > 0) sub += '★'.repeat(w.rarity) + ' ';
+    if (w.level > 0) sub += 'Lv' + w.level + ' ';
+    if (w.mods.length) sub += 'MOD×' + w.mods.length;
+    if (sub) {
+      ctx.fillStyle = '#8a8f9c';
+      ctx.fillText(sub.trim(), W / 2 + 26, VH + 13);
+    }
+    // πυρομαχικά
+    const ammoStr = st.ammo ? String(p.ammo[st.ammo]) : '∞';
+    ctx.font = 'bold 13px monospace';
     ctx.fillStyle = '#e8c040';
-    ctx.fillText(ammoStr, W / 2 + 30, VH + 7);
+    ctx.fillText(ammoStr, W / 2 + 26, VH + 21);
     ctx.font = '7px monospace';
     ctx.fillStyle = '#8a8f9c';
-    ctx.fillText('ΠΥΡΟΜ', W / 2 + 30, VH + 24);
+    ctx.fillText(st.ammo ? st.ammo.toUpperCase() : 'AMMO', W / 2 + 58, VH + 26);
 
     // SCRAP
     ctx.font = 'bold 12px monospace';
     ctx.fillStyle = '#50e0f0';
-    ctx.fillText(p.scrap, W - 78, VH + 8);
+    ctx.fillText(p.scrap, W - 66, VH + 8);
     ctx.font = '7px monospace';
     ctx.fillStyle = '#8a8f9c';
-    ctx.fillText('SCRAP', W - 78, VH + 24);
+    ctx.fillText('SCRAP', W - 66, VH + 24);
 
     // DECK
     ctx.font = '7px monospace';
     ctx.fillStyle = '#67d080';
-    ctx.fillText('D' + (game.deckIdx + 1), W - 22, VH + 8);
+    ctx.fillText('D' + (game.deckIdx + 1), W - 18, VH + 8);
     if (game.wardenDead && game.deckIdx < 3) {
       ctx.fillStyle = '#33e070';
-      ctx.fillText('ΕΞΟΔΟΣ↑', W - 40, VH + 24);
+      ctx.fillText('EXIT↑', W - 30, VH + 24);
     }
 
     // ---- minimap (toggle) ----
@@ -112,10 +155,8 @@ const HUD = (() => {
         ctx.fillRect(ox + x * cell, oy + y * cell, Math.ceil(cell), Math.ceil(cell));
       }
     }
-    // παίκτης
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(ox + game.player.x * cell - 1, oy + game.player.y * cell - 1, 3, 3);
-    // κατεύθυνση
     ctx.fillStyle = '#ffd040';
     ctx.fillRect(
       ox + (game.player.x + Math.cos(game.player.angle) * 1.5) * cell,
@@ -125,7 +166,8 @@ const HUD = (() => {
   /* Το όπλο σε πρώτο πρόσωπο + bob + muzzle flash. */
   function weapon(ctx, game) {
     const p = game.player;
-    const w = Assets.weapons[p.current];
+    const inst = PlayerSys.weapon(p);
+    const w = Assets.weapons[PlayerSys.BASES[inst.base].map];
     const img = p.fireAnim > 0 ? w.fire : w.idle;
     const bobX = Math.sin(p.bob) * 5;
     const bobY = Math.abs(Math.cos(p.bob)) * 3;
@@ -134,5 +176,5 @@ const HUD = (() => {
     ctx.drawImage(img, x, y);
   }
 
-  return { render, weapon, notifyPickup, notifyPain, BAR_H };
+  return { render, weapon, notifyPickup, notifyPain, hitmarker, BAR_H };
 })();

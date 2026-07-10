@@ -25,8 +25,8 @@ const TouchControls = (() => {
     root.className = 'hidden';
     root.innerHTML = `
       <div id="joy-base"><div id="joy-stick"></div></div>
-      <div id="fire-btn">ΠΥΡ</div>
-      <div id="wpn-btn">ΟΠΛΟ</div>
+      <div id="fire-btn">FIRE</div>
+      <div id="wpn-btn">WPN</div>
       <div id="map-btn">MAP</div>
     `;
     document.body.appendChild(root);

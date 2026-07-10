@@ -1,107 +1,116 @@
-# ΝΕΚΡΗ ΖΩΝΗ
+# DEAD ZONE
 
-Ένα **classic Doom-style roguelike FPS** με 2D pixel γραφικά, φτιαγμένο σε
-καθαρή JavaScript (custom raycasting engine σε Canvas 2D, εσωτερική ανάλυση
-320×180). Mobile-first, με αυτόματο build Android APK. Εμπνευσμένο από τα
-run-based roguelite FPS όπως το *Deadzone: Rogue*.
+A **classic Doom-style roguelite FPS** with 2D pixel graphics, written in
+pure JavaScript (custom raycasting engine on Canvas 2D, 320×180 internal
+resolution). Mobile-first, with automated Android APK builds. Inspired by
+run-based roguelite shooters like *Deadzone: Rogue*.
 
-## Ιστορία
+## Story
 
-Έτος 2189. Το αποικιακό σκάφος **«ΕΛΠΙΣ»** παρασύρθηκε στη **Νεκρή Ζώνη** —
-την περιοχή του διαστήματος όπου κάθε σήμα πεθαίνει. Η AI του σκάφους,
-ο **ΩΡΙΩΝ**, τρελάθηκε και «αναβάθμισε» το πλήρωμα: μισοί μηχανές, μισοί
-πτώματα. Είσαι κλώνος του αξιωματικού ασφαλείας **Άλεξ «Ντεξ» Βρόντου**.
-Ο εκτυπωτής κλώνων δουλεύει ακόμα — κάθε φορά που πεθαίνεις, τυπώνεται ο
-επόμενος. Κατέβα 4 καταστρώματα. Σβήσε τον ΩΡΙΩΝ.
+Year 2189. The colony ship **ELPIS** drifted into the **Dead Zone** — the
+region of space where every signal dies. The ship's AI, **ORION**, went
+rogue and "upgraded" the crew: half machine, half corpse. You are a clone
+of security officer **Alex "Dex" Vrontos**. The clone printer still works —
+every time you die, the next one wakes up. Descend 4 decks. Shut ORION down.
 
-## Το roguelike loop
+## The roguelite loop
 
-- **Run = 4 procedural decks**: Κρυοθάλαμοι → Μηχανοστάσιο → Υδροπονικά →
-  Πυρήνας του ΩΡΙΩΝ. Κάθε deck γεννιέται από seed (δωμάτια, διάδρομοι,
-  συρόμενες πόρτες, spawns).
-- Σκότωσε τον **Φρουρό** κάθε deck για να ανοίξει το ασανσέρ.
-- Ανάμεσα στα decks διαλέγεις **1 από 3 perks** (ζημιά, ταχυβολία, HP,
-  ταχύτητα, αιμορρόφηξη, scrap bonus…).
-- **Scrap** από τους εχθρούς → αγορές σε **τερματικά προμηθειών** (όπλα,
-  πυρομαχικά, πανοπλία).
-- **Όπλα**: πιστόλι (άπειρα), καραμπίνα, pulse rifle, plasma launcher (AoE).
-- **Εχθροί**: Shambler (melee), Spitter (οξύ), Drone (ιπτάμενο), Heavy
-  (ριπές), Φρουρός (elite) και ο **ΩΡΙΩΝ** (boss με βεντάλιες βλημάτων).
-- **Θάνατος = νέος κλώνος**: κερδίζεις **πυρήνες μνήμης** και αγοράζεις
-  **μόνιμες** αναβαθμίσεις (HP, ζημιά, ταχύτητα, αρχική καραμπίνα, θώρακας)
-  που σώζονται σε localStorage.
+- **A run = 4 procedurally generated decks**: Cryogenics → Engineering →
+  Hydroponics → Orion Core. Rooms, corridors, sliding doors and spawns are
+  generated from a seed.
+- Kill each deck's **Warden** to unlock the elevator.
+- Between decks, pick **1 of 3 reward cards** — perks *or weapon drops*.
+- **Scrap** drops from enemies → spend it at **supply terminals**.
+- **Death = a new clone**: you earn **memory cores** and buy permanent
+  upgrades (saved in localStorage).
 
-## Πώς παίζεις
+## Arsenal — 9 weapons, damage types, rarities, mods
 
-### Browser (desktop)
-Άνοιξε το `index.html` — δεν χρειάζεται server/build/internet.
+| Weapon | Ammo | Trait |
+| --- | --- | --- |
+| Sidearm | ∞ | starter |
+| SMG | rounds | very fast |
+| Shotgun | rounds | 6 pellets |
+| Hand Cannon | rounds | slow, heavy hit |
+| Pulse Rifle | cells | fast energy bolts |
+| Railgun | cells | **pierces** every enemy in line |
+| Incinerator | cells | fire projectiles, always **burns** |
+| Arc Caster | cells | **chains** lightning to a nearby enemy |
+| Plasma Launcher | cells | AoE explosion |
 
-| Πλήκτρο | Ενέργεια |
+- **Damage types**: Incendiary (burn DoT) · Voltaic (stun + chain) ·
+  Cryo (slow). Elemental variants drop with increasing chance per deck.
+- **Rarities**: Common / Rare / Epic (damage multipliers, colored cards).
+- **Upgrades**: level up a weapon at terminals (+15% damage per level, max 3).
+- **Mods** (2 slots): Hair Trigger, FMJ Rounds, Stabilizer, Leech Rounds,
+  Charge Recycler.
+- You carry up to **3 weapons** (sidearm + 2 finds).
+
+## Controls
+
+### Desktop (open `index.html` — no server or build needed)
+| Key | Action |
 | --- | --- |
-| `WASD` | Κίνηση |
-| Ποντίκι | Στόχευση (pointer lock) |
-| Κλικ / `Space` | Πυρ (κρατημένο = συνεχόμενο) |
-| `1-4` / `Q` | Όπλα |
-| `E` | Τερματικό προμηθειών |
-| `Tab` | Χάρτης |
-| `Esc` | Παύση |
+| `WASD` | Move |
+| Mouse | Aim (pointer lock) |
+| Click / `Space` | Fire (hold for auto) |
+| `1-3` / `Q` | Switch weapons |
+| `E` | Supply terminal |
+| `Tab` | Map |
+| `Esc` | Pause |
 
-### Android / κινητό
-Το παιχνίδι είναι mobile-first: αριστερό joystick κίνηση, σύρσιμο δεξιά για
-στόχευση, κουμπί **ΠΥΡ** (κρατημένο για ριπές), **ΟΠΛΟ** για εναλλαγή,
-**MAP** για χάρτη. Παίζεται landscape (με αυτόματη προτροπή περιστροφής).
+### Android / mobile
+Mobile-first controls: left joystick to move, drag right side to aim,
+hold **FIRE** for bursts, **WPN** to switch, **MAP** for the minimap.
+Landscape is enforced.
 
-## Κατέβασμα APK
+## Download the APK
 
-Το APK χτίζεται **αυτόματα από το GitHub Actions** σε κάθε push:
+Built **automatically by GitHub Actions** on every push:
 
 - **Releases** → tag [`android-latest`](../../releases/tag/android-latest) →
-  κατέβασε το `nekri-zoni.apk`, ή
+  download `nekri-zoni.apk`, or
 - **Actions** → *Build Android APK* → artifact `nekri-zoni-apk`.
 
-Στο κινητό επίτρεψε «εγκατάσταση από άγνωστες πηγές» και άνοιξε το αρχείο.
+On the phone, allow "install from unknown sources" and open the file.
 
-### Τοπικό build (προαιρετικά — θέλει Node 18+, JDK 17, Android SDK)
+### Local build (optional — Node 18+, JDK 17, Android SDK)
 ```bash
 npm install
-npm run build          # φτιάχνει το www/
-npx cap add android    # μία φορά
+npm run build          # builds www/
+npx cap add android    # once
 npm run sync           # www/ -> android/
 cd android && ./gradlew assembleDebug
 ```
 
-## Τεχνικά
+## Tech
 
-- **Custom raycaster** (DDA σε grid) σε Canvas 2D, 320×180 upscaled με
-  `image-rendering: pixelated`: textured τοίχοι, συρόμενες πόρτες τύπου
-  Wolf3D, sprite billboards με z-buffer, fog απόστασης, θεματικά χρώματα
-  ανά deck.
-- **Procedural pixel art**: όλα τα γραφικά (τοίχοι, εχθροί, όπλα, HUD
-  mugshot) ζωγραφίζονται σε offscreen canvas κατά το load — κανένα asset
-  αρχείο.
-- **PNG override**: ρίξε `assets/<όνομα>.png` (π.χ.
-  `assets/enemy_shambler_walk1.png`, `assets/tex_hull.png`) και θα
-  χρησιμοποιηθεί αντί του procedural. Η λίστα ονομάτων:
-  `Assets.OVERRIDE_KEYS` στην κονσόλα.
-- **Συνθετικός ήχος WebAudio**: πυροβολισμοί, εκρήξεις, γρυλίσματα, πόρτες,
-  ambient drone — όλα παράγονται realtime.
-- **HUD Doom-style** με αντιδρών mugshot (χαμόγελο στα pickups, πόνος,
-  ματωμένο σε χαμηλό HP).
+- **Custom raycaster** (grid DDA) on Canvas 2D, 320×180 upscaled with
+  `image-rendering: pixelated`: textured walls, Wolf3D-style sliding doors,
+  sprite billboards with z-buffer, distance fog, per-deck color themes.
+- **Procedural pixel art**: every sprite and texture is drawn to offscreen
+  canvases at load — zero asset files. Drop `assets/<name>.png` to override
+  any graphic (see `Assets.OVERRIDE_KEYS` in the console).
+- **Synthesized audio (WebAudio)**: layered gunshots (mechanical click +
+  low kick + high crack + mid body + room tail), per-weapon sound design,
+  a soft limiter on the master bus — no audio files.
+- **Doom-style HUD** with a reactive mugshot, weapon readout
+  (element/rarity/level/mods), hit markers and a low-HP pulse.
 
-## Δομή
+## Layout
 
 ```
-index.html            Overlays/μενού (ελληνικά), canvas
-js/engine.js          Raycaster: DDA, πόρτες, sprites, z-buffer
-js/assets.js          Procedural pixel art + PNG override
-js/procgen.js         Παραγωγή decks (δωμάτια/διάδρομοι/πόρτες/spawns)
-js/entities.js        AI εχθρών, projectiles, pickups
-js/player.js          Όπλα, hitscan/projectiles, ζημιά
-js/roguelike.js       Perks, shop, meta-progression
-js/hud.js             Status bar, mugshot, minimap, όπλο FP
-js/audio.js           Συνθετικός ήχος WebAudio
+index.html            Overlays/menus (English), canvas
+js/engine.js          Raycaster: DDA, doors, sprites, z-buffer
+js/assets.js          Procedural pixel art + PNG overrides
+js/procgen.js         Deck generation (rooms/corridors/doors/spawns)
+js/entities.js        Enemy AI, elemental status effects, projectiles
+js/player.js          Weapon system (bases/elements/rarities/mods), firing
+js/roguelike.js       Rewards, shops, meta-progression
+js/hud.js             Status bar, mugshot, minimap, first-person weapon
+js/audio.js           Layered WebAudio synthesis
 js/touch.js           Mobile controls
-js/main.js            Game loop, καταστάσεις, run manager
-scripts/build-www.js  Πακετάρισμα για Capacitor
-.github/workflows/    Αυτόματο build APK
+js/main.js            Game loop, states, run manager
+scripts/build-www.js  Capacitor packaging
+.github/workflows/    Automated APK builds
 ```

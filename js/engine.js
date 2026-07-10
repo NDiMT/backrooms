@@ -180,10 +180,10 @@ const Engine = (() => {
         ctx.drawImage(img, sx, 0, 1, img.height, x, drawY, 1, hpx);
       }
       ctx.globalAlpha = 1;
-      if (s.flash) {
-        // στιγμιαία λάμψη (πόνος) — πρόχειρο λευκό στο πλάτος του sprite
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = '#fff';
+      if (s.flash || s.flashColor) {
+        // λάμψη: λευκή στο χτύπημα, χρωματιστή για elemental status
+        ctx.globalAlpha = s.flash ? 0.25 : 0.16;
+        ctx.fillStyle = s.flash ? '#fff' : s.flashColor;
         ctx.fillRect(x0, drawY, x1 - x0, hpx);
         ctx.globalAlpha = 1;
       }

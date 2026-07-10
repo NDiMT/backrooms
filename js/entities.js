@@ -37,6 +37,27 @@ const Entities = (() => {
       this.strafeDir = Math.random() < 0.5 ? 1 : -1;
       this.strafeT = 0;
       this.flash = 0;
+      // damage-type effects
+      this.burnT = 0; this.burnDps = 0;
+      this.shockT = 0;
+      this.cryoT = 0;
+      this.statusFx = null; // χρώμα flash για το render
+    }
+
+    /* Εφαρμογή elemental status από χτύπημα. */
+    applyStatus(element, dmg, game) {
+      if (!this.alive()) return;
+      if (element === 'fire') {
+        this.burnT = 3.0;
+        this.burnDps = Math.max(this.burnDps, dmg * 0.25);
+        this.statusFx = '#ff7830';
+      } else if (element === 'shock') {
+        this.shockT = Math.max(this.shockT, this.stats.boss ? 0.25 : 0.7);
+        this.statusFx = '#40d8ff';
+      } else if (element === 'cryo') {
+        this.cryoT = 2.5;
+        this.statusFx = '#a8ccff';
+      }
     }
 
     alive() { return this.state !== 'dying' && this.state !== 'dead'; }
@@ -83,6 +104,32 @@ const Entities = (() => {
         this.deadT += dt;
         if (this.deadT > 0.5) this.state = 'dead';
         return;
+      }
+
+      // ---- elemental effects ----
+      if (this.burnT > 0) {
+        this.burnT -= dt;
+        this.hp -= this.burnDps * dt;
+        this.statusFx = '#ff7830';
+        if (this.hp <= 0) {
+          this.state = 'dying';
+          this.deadT = 0;
+          game.audio.enemyDie(this.type);
+          game.onEnemyDeath(this);
+          return;
+        }
+        if (this.burnT <= 0) { this.burnDps = 0; this.statusFx = null; }
+      }
+      if (this.cryoT > 0) {
+        this.cryoT -= dt;
+        this.statusFx = this.burnT > 0 ? this.statusFx : '#a8ccff';
+        if (this.cryoT <= 0 && this.burnT <= 0) this.statusFx = null;
+      }
+      if (this.shockT > 0) {
+        this.shockT -= dt;
+        this.statusFx = '#40d8ff';
+        if (this.shockT <= 0 && this.burnT <= 0 && this.cryoT <= 0) this.statusFx = null;
+        return; // παράλυση — καμία ενέργεια
       }
       if (this.state === 'pain') {
         this.painT -= dt;
@@ -151,7 +198,8 @@ const Entities = (() => {
           const n = Math.hypot(mx, my);
           mx /= n; my /= n;
         }
-        const sp = st.speed * (sees ? 1 : 0.5);
+        let sp = st.speed * (sees ? 1 : 0.5);
+        if (this.cryoT > 0) sp *= 0.55; // παγωμένος
         const blocked = Procgen.move(game.world, this, mx * sp * dt, my * sp * dt, st.radius);
         if (blocked && !sees) this.state = 'idle';
       }
@@ -227,6 +275,11 @@ const Entities = (() => {
     explode(game, directHit) {
       this.dead = true;
       if (!this.fromPlayer) return;
+      const hitOne = (e, dmg) => {
+        game.registerHit(e, dmg, this.element);
+        if (this.element) e.applyStatus(this.element, dmg, game);
+        if (this.vamp) game.vampHeal = (game.vampHeal || 0) + this.vamp;
+      };
       if (this.splash > 0) {
         game.audio.explosion();
         game.shake(0.35);
@@ -234,12 +287,11 @@ const Entities = (() => {
           if (!e.alive()) continue;
           const d = Math.hypot(e.x - this.x, e.y - this.y);
           if (d < this.splash) {
-            const dmg = this.dmg * Math.max(0.35, 1 - d / this.splash);
-            game.registerHit(e, dmg);
+            hitOne(e, this.dmg * Math.max(0.35, 1 - d / this.splash));
           }
         }
       } else if (directHit) {
-        game.registerHit(directHit, this.dmg);
+        hitOne(directHit, this.dmg);
       }
     }
 
@@ -247,24 +299,28 @@ const Entities = (() => {
   }
 
   const PICKUP_DEFS = {
-    medkit:   { worldH: 0.22, msg: '+35 HP' },
-    shells:   { worldH: 0.18, msg: '+8 φυσίγγια' },
-    cells:    { worldH: 0.18, msg: '+20 κελιά ενέργειας' },
-    scrap:    { worldH: 0.16, msg: null },
-    core:     { worldH: 0.24, msg: '+1 πυρήνας μνήμης' },
-    wShotgun: { worldH: 0.26, msg: 'ΚΑΡΑΜΠΙΝΑ' },
-    wRifle:   { worldH: 0.26, msg: 'PULSE RIFLE' },
-    wLauncher:{ worldH: 0.26, msg: 'PLASMA LAUNCHER' },
+    medkit: { worldH: 0.22, msg: '+35 HP' },
+    rounds: { worldH: 0.18, msg: '+12 rounds' },
+    cells:  { worldH: 0.18, msg: '+20 energy cells' },
+    scrap:  { worldH: 0.16, msg: null },
+    core:   { worldH: 0.24, msg: '+1 memory core' },
+    weapon: { worldH: 0.28, msg: null }, // .inst καθορίζει το όπλο
   };
 
   class Pickup {
-    constructor(kind, x, y) {
+    constructor(kind, x, y, inst) {
       this.kind = kind; this.x = x; this.y = y;
       this.def = PICKUP_DEFS[kind];
+      this.inst = inst || null;
       this.taken = false;
       this.bob = Math.random() * 6;
     }
-    sprite() { return Assets.pickups[this.kind]; }
+    sprite() {
+      if (this.kind === 'weapon') {
+        return Assets.wpnIcons[PlayerSys.BASES[this.inst.base].map];
+      }
+      return Assets.pickups[this.kind];
+    }
   }
 
   return { Enemy, Projectile, Pickup, STATS, PICKUP_DEFS };

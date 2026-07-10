@@ -218,12 +218,11 @@ const Procgen = (() => {
     for (let i = 1; i < rooms.length; i++) {
       const room = rooms[i];
       if (rand() < 0.55) drop('medkit', room);
-      if (rand() < 0.6) drop(rand() < 0.55 ? 'shells' : 'cells', room);
+      if (rand() < 0.6) drop(rand() < 0.55 ? 'rounds' : 'cells', room);
       if (rand() < 0.35) drop('scrap', room);
     }
-    // εγγυημένο όπλο ανά deck (στο 2ο κοντινότερο δωμάτιο)
-    const wpnByDeck = ['wShotgun', 'wRifle', 'wLauncher', null][deckIdx];
-    if (wpnByDeck && rooms.length > 2) drop(wpnByDeck, rooms[1 + ((rand() * (rooms.length - 2)) | 0)]);
+    // εγγυημένο τυχαίο όπλο ανά deck (το instance το φτιάχνει το main)
+    if (rooms.length > 2) drop('weapon', rooms[1 + ((rand() * (rooms.length - 2)) | 0)]);
 
     // ---- τερματικά καταστήματος ----
     const terminals = [];
