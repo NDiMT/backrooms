@@ -160,21 +160,6 @@
                 font-family: 'Press Start 2P', monospace;
                 font-size: clamp(7px, 1.4vmin, 10px); letter-spacing: 0.05em; }
   .card.disabled { opacity: 0.35; pointer-events: none; }
-  /* pixel-art 9-slice panels/κουμπιά (ενεργά όταν υπάρχουν τα PixelLab UI PNGs) */
-  body.px-ui .card {
-    border: 10px solid transparent;
-    border-image: url('assets/ui_panel.png') 24 fill / 10px stretch;
-    background: none;
-  }
-  body.px-ui button {
-    border: 8px solid transparent;
-    border-image: url('assets/ui_button.png') 10 fill / 8px stretch;
-    background: none;
-  }
-  body.px-ui button.primary {
-    border-image-source: url('assets/ui_button_red.png');
-    background: none;
-  }
   #shop-terminal-img {
     height: clamp(70px, 12vmin, 110px);
     image-rendering: pixelated;

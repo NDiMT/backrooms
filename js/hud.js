@@ -83,13 +83,7 @@ const HUD = (() => {
     }
 
     // ---- status bar: DOOM-style μεταλλικό panel ----
-    if (Assets.ui.statusbarTile) {
-      // pixel-art λωρίδα, επαναλαμβανόμενη οριζόντια
-      const t = Assets.ui.statusbarTile;
-      for (let x = 0; x < W; x += t.width) {
-        ctx.drawImage(t, x, VH, t.width, BAR_H);
-      }
-    } else if (Assets.ui.statusbar) {
+    if (Assets.ui.statusbar) {
       ctx.drawImage(Assets.ui.statusbar, 0, VH, W, BAR_H);
     } else {
       ctx.fillStyle = '#2a2d33';
@@ -105,7 +99,7 @@ const HUD = (() => {
 
     // ---- HP (μεγάλα κόκκινα DOOM digits) ----
     slot(ctx, 4, VH + 4, 58, 28);
-    doomText(ctx, String(Math.max(0, Math.ceil(p.hp))) + '%', 8, VH + 8, 11,
+    doomText(ctx, Math.min(999, Math.max(0, Math.ceil(p.hp))) + '%', 8, VH + 8, 11,
       p.hp < p.maxHp * 0.3 ? '#ff2010' : '#e03a2a');
     ctx.font = '10px VT323, monospace';
     ctx.fillStyle = '#7c828e';

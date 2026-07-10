@@ -1008,7 +1008,6 @@ const Assets = (() => {
   for (const key of Object.keys(A.projectiles)) reg(`proj_${key}`, img => { A.projectiles[key] = img; });
   reg('prop_terminal', img => { A.props.terminal = img; });
   reg('ui_statusbar', img => { A.ui.statusbar = img; });
-  reg('ui_statusbar_tile', img => { A.ui.statusbarTile = img; });
 
   A.OVERRIDE_KEYS = OVERRIDES.map(o => o.path);
 
