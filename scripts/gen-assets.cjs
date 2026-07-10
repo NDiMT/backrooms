@@ -63,6 +63,18 @@ const TEXTURES = {
 const texPrompt = d =>
   `Retro 90s DOOM-style pixel art texture for an FPS game: seamless tileable SQUARE wall texture. ${d}. Chunky pixels, hard edges, dark gritty palette. The texture fills the entire image edge to edge with no border. No text, no watermark.`;
 
+// ---------- Projectiles + props ----------
+const EXTRA_JOBS = {
+  projectiles: {
+    kind: 'projSheet',
+    prompt: `${STYLE} ONE horizontal row of 4 small glowing energy projectile sprites for a retro FPS, separated by wide pure magenta gaps: (1) green dripping acid glob, (2) bright cyan plasma ball with a glowing core, (3) red-orange energy bolt, (4) orange-yellow fireball with a small flame trail. Each one small, round-ish and readable.`,
+  },
+  terminal: {
+    kind: 'prop',
+    prompt: `${STYLE} A single small sci-fi supply vending terminal kiosk standing on the floor: dark metal body, glowing green screen, yellow keypad, small legs. Front view, full object.`,
+  },
+};
+
 // ---------- UI: mugshot, pickups, status bar ----------
 const UI_JOBS = {
   faces: {
@@ -185,33 +197,38 @@ async function processAll(jobs) {
       ctx.drawImage(c, 0, 0, w, h);
       return o;
     }
-    /* Τεμαχίζει οριζόντια λωρίδα σε ≤n frames με βάση κενές στήλες. */
+    /* Τεμαχίζει sheet σε ≤n frames: πρώτα ζώνες σειρών (κενές γραμμές),
+       μετά στήλες μέσα σε κάθε ζώνη — δουλεύει και για 1 σειρά και για grid. */
     function splitRow(c, n) {
-      const occ = columnsOccupancy(c);
-      const segs = [];
-      let start = -1;
-      for (let x = 0; x <= occ.length; x++) {
-        const filled = x < occ.length && occ[x] > 2;
-        if (filled && start < 0) start = x;
-        if (!filled && start >= 0) {
-          segs.push([start, x - 1]);
-          start = -1;
+      const data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      const at = (x, y) => data[(y * c.width + x) * 4 + 3] > 30;
+
+      function runs(occ, minSize) {
+        const segs = []; let start = -1;
+        for (let i = 0; i <= occ.length; i++) {
+          const filled = i < occ.length && occ[i] > 2;
+          if (filled && start < 0) start = i;
+          if (!filled && start >= 0) { segs.push([start, i - 1]); start = -1; }
+        }
+        return segs.filter(s => s[1] - s[0] > minSize);
+      }
+
+      const occRow = new Array(c.height).fill(0);
+      for (let y = 0; y < c.height; y++)
+        for (let x = 0; x < c.width; x++) if (at(x, y)) occRow[y]++;
+
+      const frames = [];
+      for (const [y0, y1] of runs(occRow, c.height * 0.06)) {
+        const occCol = new Array(c.width).fill(0);
+        for (let x = 0; x < c.width; x++)
+          for (let y = y0; y <= y1; y++) if (at(x, y)) occCol[x]++;
+        for (const [x0, x1] of runs(occCol, c.width * 0.03)) {
+          const sub = crop(c, { x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+          const r = bbox(sub);
+          frames.push(r ? crop(sub, r) : sub);
         }
       }
-      // συγχώνευση πολύ μικρών segments με το γειτονικό (θόρυβος)
-      const min = c.width * 0.03;
-      const merged = [];
-      for (const s of segs) {
-        if (merged.length && s[0] - merged[merged.length - 1][1] < c.width * 0.01) {
-          merged[merged.length - 1][1] = s[1];
-        } else merged.push(s);
-      }
-      const big = merged.filter(s => s[1] - s[0] > min);
-      return big.slice(0, n).map(([a, b]) => {
-        const sub = crop(c, { x0: a, y0: 0, w: b - a + 1, h: c.height });
-        const r = bbox(sub);
-        return r ? crop(sub, r) : sub;
-      });
+      return frames.slice(0, n);
     }
 
     const out = {};
@@ -258,6 +275,21 @@ async function processAll(jobs) {
         }
       } else if (job.kind === 'panel') {
         out['ui_statusbar'] = resize(c, 320, 36).toDataURL('image/png');
+      } else if (job.kind === 'projSheet') {
+        c = chromaKey(c);
+        const frames = splitRow(c, 4);
+        const names = ['acid', 'plasma', 'bolt', 'flame'];
+        for (let i = 0; i < names.length && i < frames.length; i++) {
+          const f = frames[i];
+          const h = 16, w = Math.max(6, Math.round(f.width * h / f.height));
+          out[`proj_${names[i]}`] = resize(f, w, h).toDataURL('image/png');
+        }
+      } else if (job.kind === 'prop') {
+        c = chromaKey(c);
+        const r = bbox(c);
+        if (r) c = crop(c, r);
+        const h = 72, w = Math.max(8, Math.round(c.width * h / c.height));
+        out['prop_terminal'] = resize(c, w, h).toDataURL('image/png');
       }
     }
     return out;
@@ -285,6 +317,9 @@ async function processAll(jobs) {
   if (what === 'all' || what === 'ui') {
     for (const [n, j] of Object.entries(UI_JOBS)) gen.push(['u_' + n, j.prompt]);
   }
+  if (what === 'all' || what === 'extra') {
+    for (const [n, j] of Object.entries(EXTRA_JOBS)) gen.push(['x_' + n, j.prompt]);
+  }
 
   console.log(`Παραγωγή ${gen.length} εικόνων με ${MODEL}…`);
   for (const [name, prompt] of gen) {
@@ -309,6 +344,10 @@ async function processAll(jobs) {
     else if (name.startsWith('u_')) {
       const n = name.slice(2);
       jobs.push({ kind: UI_JOBS[n] ? UI_JOBS[n].kind : 'panel', name: n, dataUrl });
+    }
+    else if (name.startsWith('x_')) {
+      const n = name.slice(2);
+      jobs.push({ kind: EXTRA_JOBS[n] ? EXTRA_JOBS[n].kind : 'prop', name: n, dataUrl });
     }
   }
   const results = await processAll(jobs);
