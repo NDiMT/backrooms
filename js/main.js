@@ -191,13 +191,15 @@
     const el = inst.element ? PlayerSys.ELEMENTS[inst.element] : null;
     const st = PlayerSys.stats(inst, null);
     const img = Assets.weapons[b.map].idle;
+    // canvas → dataURL, ενώ τα PNG overrides είναι <img> με έτοιμο src
+    const imgSrc = img.toDataURL ? img.toDataURL() : img.src;
     const details =
       `DMG ${Math.round(st.dmg)}${st.pellets > 1 ? '×' + st.pellets : ''} · ` +
       `${(1 / st.rate).toFixed(1)}/s` +
       (st.pierce ? ' · PIERCING' : '') + (st.chain ? ' · CHAINS' : '') +
       (st.splash ? ' · AOE' : '');
     return `
-      <img class="wpn-preview" src="${img.toDataURL()}" alt="">
+      <img class="wpn-preview" src="${imgSrc}" alt="">
       <h3 style="color:${el ? el.color : rar.color}">${PlayerSys.displayName(inst)}</h3>
       <p>${details}</p>
       ${el ? `<p style="color:${el.color}">${el.desc}</p>` : ''}
@@ -418,6 +420,9 @@
     $('shop-key-hint').style.display = 'none';
   }
   $('clone-no').textContent = meta.runs + 1;
+
+  // φόρτωση PNG overrides από assets/ (AI-generated γραφικά, αν υπάρχουν)
+  Assets.loadOverrides(() => {});
 
   // ---------- update ----------
   function update(dt) {
