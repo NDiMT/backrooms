@@ -169,8 +169,9 @@ for (const [name, [desc, size]] of Object.entries(ENEMIES)) {
 async function animate(a) {
   const refPath = path.join(OUT, a.ref + '.png');
   const reference = fs.readFileSync(refPath).toString('base64');
+  const dim = Math.max(64, a.size); // το animate API απαιτεί >= 64
   const body = {
-    image_size: { width: a.size, height: a.size },
+    image_size: { width: dim, height: dim },
     description: a.desc,
     action: a.action,
     reference_image: { type: 'base64', base64: reference },
@@ -291,6 +292,13 @@ async function safeBalance() {
   if (what === 'animations') {
     console.log(`PixelLab animations: ${ANIMS.length} κλήσεις. Balance: $${await safeBalance()}`);
     for (const a of ANIMS) {
+      const skipMin = parseInt(process.env.SKIP_NEWER_MIN || '0', 10);
+      const first = path.join(OUT, a.outs[0] + '.png');
+      if (skipMin && fs.existsSync(first) &&
+          fs.statSync(first).mtimeMs > Date.now() - skipMin * 60000) {
+        console.log(`  ${a.outs[0]}…: υπάρχει, skip`);
+        continue;
+      }
       await animate(a);
       await sleep(1500);
     }
