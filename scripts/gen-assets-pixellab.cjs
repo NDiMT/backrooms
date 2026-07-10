@@ -166,10 +166,34 @@ for (const [name, [desc, size]] of Object.entries(ENEMIES)) {
   });
 }
 
+/* Φέρνει το reference στο ζητούμενο μέγεθος (nearest-neighbor). */
+async function resizeRef(b64, from, to) {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium',
+  });
+  const page = await browser.newPage();
+  const out = await page.evaluate(async ({ b64, to }) => {
+    const im = await new Promise((ok, err) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = err;
+      i.src = 'data:image/png;base64,' + b64;
+    });
+    const c = document.createElement('canvas');
+    c.width = to; c.height = to;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, 0, 0, to, to);
+    return c.toDataURL('image/png').split(',')[1];
+  }, { b64, to });
+  await browser.close();
+  return out;
+}
+
 async function animate(a) {
   const refPath = path.join(OUT, a.ref + '.png');
-  const reference = fs.readFileSync(refPath).toString('base64');
-  const dim = Math.max(64, a.size); // το animate API απαιτεί >= 64
+  let reference = fs.readFileSync(refPath).toString('base64');
+  const dim = 64; // το animate API δέχεται ΜΟΝΟ 64x64
+  if (a.size !== dim) reference = await resizeRef(reference, a.size, dim);
   const body = {
     image_size: { width: dim, height: dim },
     description: a.desc,
@@ -293,7 +317,7 @@ async function safeBalance() {
     console.log(`PixelLab animations: ${ANIMS.length} κλήσεις. Balance: $${await safeBalance()}`);
     for (const a of ANIMS) {
       const skipMin = parseInt(process.env.SKIP_NEWER_MIN || '0', 10);
-      const first = path.join(OUT, a.outs[0] + '.png');
+      const first = path.join(OUT, a.outs[a.outs.length - 1] + '.png');
       if (skipMin && fs.existsSync(first) &&
           fs.statSync(first).mtimeMs > Date.now() - skipMin * 60000) {
         console.log(`  ${a.outs[0]}…: υπάρχει, skip`);
