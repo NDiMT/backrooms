@@ -22,10 +22,33 @@ const HUD = (() => {
   }
 
   function bar(ctx, x, y, w, val, max, color) {
-    ctx.fillStyle = '#1a1c22';
+    ctx.fillStyle = '#101216';
     ctx.fillRect(x, y, w, 4);
     ctx.fillStyle = color;
-    ctx.fillRect(x, y, Math.max(0, Math.min(1, val / max)) * w, 4);
+    ctx.fillRect(x + 1, y + 1, Math.max(0, Math.min(1, val / max)) * (w - 2), 2);
+  }
+
+  /* DOOM-style ψηφία: μαύρο περίγραμμα + έντονο χρώμα. */
+  function doomText(ctx, text, x, y, px, color) {
+    ctx.font = `bold ${px}px monospace`;
+    ctx.fillStyle = '#000';
+    for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      ctx.fillText(text, x + ox, y + oy);
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+
+  /* Βυθισμένη «θήκη» πάνω στο panel. */
+  function slot(ctx, x, y, w, h) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillRect(x, y, 1, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x, y + h - 1, w, 1);
+    ctx.fillRect(x + w - 1, y, 1, h);
   }
 
   function render(ctx, game, dt) {
@@ -59,81 +82,80 @@ const HUD = (() => {
       ctx.strokeRect(1.5, 1.5, W - 3, VH - 3);
     }
 
-    // ---- status bar ----
-    ctx.fillStyle = '#23262e';
-    ctx.fillRect(0, VH, W, BAR_H);
-    ctx.fillStyle = '#3a3f4c';
-    ctx.fillRect(0, VH, W, 2);
+    // ---- status bar: DOOM-style μεταλλικό panel ----
+    if (Assets.ui.statusbar) {
+      ctx.drawImage(Assets.ui.statusbar, 0, VH, W, BAR_H);
+    } else {
+      ctx.fillStyle = '#2a2d33';
+      ctx.fillRect(0, VH, W, BAR_H);
+    }
+    // bevel πάνω ακμής
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(0, VH, W, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, VH + 1, W, 1);
 
     ctx.textBaseline = 'top';
 
-    // HP
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = p.hp < p.maxHp * 0.3 ? '#ff4040' : '#e8e4d0';
-    ctx.fillText(Math.max(0, Math.ceil(p.hp)), 8, VH + 7);
+    // ---- HP (μεγάλα κόκκινα DOOM digits) ----
+    slot(ctx, 4, VH + 4, 58, 28);
+    doomText(ctx, String(Math.max(0, Math.ceil(p.hp))) + '%', 8, VH + 6, 15,
+      p.hp < p.maxHp * 0.3 ? '#ff2010' : '#e03a2a');
     ctx.font = '7px monospace';
-    ctx.fillStyle = '#8a8f9c';
-    ctx.fillText('HP', 8, VH + 24);
-    bar(ctx, 26, VH + 26, 34, p.hp, p.maxHp, '#c03030');
+    ctx.fillStyle = '#7c828e';
+    ctx.fillText('HEALTH', 8, VH + 23);
+    bar(ctx, 8, VH + 30, 50, p.hp, p.maxHp, '#c03030');
 
-    // ARMOR
-    ctx.font = 'bold 12px monospace';
-    ctx.fillStyle = '#7ac0e8';
-    ctx.fillText(Math.ceil(p.armor), 68, VH + 8);
+    // ---- ARMOR ----
+    slot(ctx, 66, VH + 4, 40, 28);
+    doomText(ctx, String(Math.ceil(p.armor)), 70, VH + 8, 13, '#4a9fff');
     ctx.font = '7px monospace';
-    ctx.fillStyle = '#8a8f9c';
-    ctx.fillText('ARM', 68, VH + 24);
+    ctx.fillStyle = '#7c828e';
+    ctx.fillText('ARMOR', 70, VH + 24);
 
-    // ---- πρόσωπο στο κέντρο ----
+    // ---- πρόσωπο στο κέντρο, με κορνίζα ----
     const f = face(p, dt);
-    ctx.drawImage(f, W / 2 - f.width / 2, VH + (BAR_H - f.height) / 2);
+    const fw = f.width * ((BAR_H - 6) / f.height);
+    slot(ctx, W / 2 - fw / 2 - 2, VH + 2, fw + 4, BAR_H - 4);
+    ctx.drawImage(f, W / 2 - fw / 2, VH + 3, fw, BAR_H - 6);
 
-    // ---- WEAPON readout (δεξιά του προσώπου, συμπαγές για να μην
-    //      πατάει στο SCRAP) ----
+    // ---- WEAPON readout ----
     const w = PlayerSys.weapon(p);
     const st = PlayerSys.stats(w, p.perks);
+    slot(ctx, W / 2 + 22, VH + 4, 84, 28);
     ctx.font = '7px monospace';
-    // κουκκίδα element + όνομα βάσης
     if (w.element) {
       ctx.fillStyle = PlayerSys.ELEMENTS[w.element].color;
-      ctx.fillText('●', W / 2 + 26, VH + 5);
+      ctx.fillText('●', W / 2 + 26, VH + 6);
     }
     ctx.fillStyle = PlayerSys.RARITIES[w.rarity].color;
     const nm = PlayerSys.BASES[w.base].name;
-    ctx.fillText(nm.slice(0, 15), W / 2 + (w.element ? 34 : 26), VH + 5);
-    // γραμμή 2: rarity/level/mods
+    ctx.fillText(nm.slice(0, 13), W / 2 + (w.element ? 34 : 26), VH + 6);
+    const ammoStr = st.ammo ? String(p.ammo[st.ammo]) : '∞';
+    doomText(ctx, ammoStr, W / 2 + 26, VH + 15, 14, '#e03a2a');
+    ctx.font = '7px monospace';
+    ctx.fillStyle = '#7c828e';
+    ctx.fillText(st.ammo ? st.ammo.toUpperCase() : 'AMMO', W / 2 + 58, VH + 17);
     let sub = '';
     if (w.rarity > 0) sub += '★'.repeat(w.rarity) + ' ';
     if (w.level > 0) sub += 'Lv' + w.level + ' ';
-    if (w.mods.length) sub += 'MOD×' + w.mods.length;
+    if (w.mods.length) sub += 'M×' + w.mods.length;
     if (sub) {
-      ctx.fillStyle = '#8a8f9c';
-      ctx.fillText(sub.trim(), W / 2 + 26, VH + 13);
+      ctx.fillStyle = '#9aa0ac';
+      ctx.fillText(sub.trim(), W / 2 + 58, VH + 25);
     }
-    // πυρομαχικά
-    const ammoStr = st.ammo ? String(p.ammo[st.ammo]) : '∞';
-    ctx.font = 'bold 13px monospace';
-    ctx.fillStyle = '#e8c040';
-    ctx.fillText(ammoStr, W / 2 + 26, VH + 21);
-    ctx.font = '7px monospace';
-    ctx.fillStyle = '#8a8f9c';
-    ctx.fillText(st.ammo ? st.ammo.toUpperCase() : 'AMMO', W / 2 + 58, VH + 26);
 
-    // SCRAP
-    ctx.font = 'bold 12px monospace';
-    ctx.fillStyle = '#50e0f0';
-    ctx.fillText(p.scrap, W - 66, VH + 8);
+    // ---- SCRAP + DECK ----
+    slot(ctx, W - 70, VH + 4, 66, 28);
+    doomText(ctx, String(p.scrap), W - 66, VH + 8, 12, '#50e0f0');
     ctx.font = '7px monospace';
-    ctx.fillStyle = '#8a8f9c';
+    ctx.fillStyle = '#7c828e';
     ctx.fillText('SCRAP', W - 66, VH + 24);
-
-    // DECK
-    ctx.font = '7px monospace';
     ctx.fillStyle = '#67d080';
     ctx.fillText('D' + (game.deckIdx + 1), W - 18, VH + 8);
     if (game.wardenDead && game.deckIdx < 3) {
       ctx.fillStyle = '#33e070';
-      ctx.fillText('EXIT↑', W - 30, VH + 24);
+      ctx.fillText('EXIT↑', W - 34, VH + 16);
     }
 
     // ---- minimap (toggle) ----

@@ -66,11 +66,17 @@
   }
   .hidden { display: none !important; }
 
-  h1 { font-size: clamp(26px, 7vmin, 54px); letter-spacing: 0.3em;
-       color: #d03030; text-shadow: 0 0 30px rgba(208, 48, 48, 0.5);
+  h1 { font-size: clamp(28px, 7.5vmin, 58px); letter-spacing: 0.22em;
+       font-weight: 900;
+       color: #e8321e;
+       text-shadow: 2px 2px 0 #5a0c04, 4px 4px 0 #200402,
+                    0 0 34px rgba(232, 50, 30, 0.55);
        margin-bottom: 4px; }
-  h2 { font-size: clamp(16px, 3.4vmin, 26px); letter-spacing: 0.25em;
-       color: #cfd4e0; margin-bottom: 16px; }
+  h2 { font-size: clamp(17px, 3.6vmin, 28px); letter-spacing: 0.22em;
+       font-weight: 900;
+       color: #e8321e;
+       text-shadow: 1px 1px 0 #5a0c04, 2px 2px 0 #200402;
+       margin-bottom: 16px; }
   .sub { font-size: clamp(10px, 1.9vmin, 14px); letter-spacing: 0.4em;
          opacity: 0.55; margin-bottom: 18px; }
   .lore { max-width: 640px; line-height: 1.65;
@@ -81,17 +87,30 @@
   .controls-hint { font-size: clamp(10px, 1.7vmin, 12px); opacity: 0.45;
                    line-height: 1.9; margin-bottom: 18px; }
 
+  /* DOOM-style κουμπιά: μεταλλικό bevel + έντονο κείμενο */
   button {
     font-family: inherit; font-size: clamp(13px, 2.4vmin, 17px);
-    letter-spacing: 0.2em; padding: 12px 34px; cursor: pointer;
-    background: transparent; color: #cfd4e0;
-    border: 1px solid rgba(207, 212, 224, 0.45);
-    transition: background 0.15s, color 0.15s;
+    font-weight: 900;
+    letter-spacing: 0.18em; padding: 12px 34px; cursor: pointer;
+    background: linear-gradient(#3a3e46, #24262c 45%, #1a1c20);
+    color: #d8dce6;
+    text-shadow: 1px 1px 0 #000;
+    border: 2px solid;
+    border-color: #5a606c #101216 #101216 #5a606c;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12),
+                0 2px 6px rgba(0,0,0,0.6);
+    transition: filter 0.12s, transform 0.08s;
     margin: 4px;
   }
-  button:hover, button:active { background: #cfd4e0; color: #0a0c10; }
-  button.primary { border-color: #d03030; color: #ff6050; }
-  button.primary:hover, button.primary:active { background: #d03030; color: #fff; }
+  button:hover { filter: brightness(1.25); }
+  button:active { transform: translateY(1px);
+    border-color: #101216 #5a606c #5a606c #101216; }
+  button.primary {
+    background: linear-gradient(#7a1a10, #56100a 45%, #3808044);
+    background: linear-gradient(#7a1a10, #56100a 45%, #380804);
+    color: #ffd9d2;
+    border-color: #a8402e #200402 #200402 #a8402e;
+  }
   button:disabled { opacity: 0.3; pointer-events: none; }
 
   /* reward/shop/meta cards */
@@ -99,25 +118,31 @@
            justify-content: center; margin: 14px 0; max-width: 96vw; }
   .card {
     width: clamp(160px, 28vmin, 220px); padding: 14px 10px;
-    border: 1px solid rgba(207, 212, 224, 0.35);
-    background: rgba(20, 24, 32, 0.9); cursor: pointer;
-    transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    background: linear-gradient(#2e3138, #1c1e24 60%, #15171b);
+    border: 2px solid;
+    border-color: #565c68 #0e1013 #0e1013 #565c68;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
+                0 3px 10px rgba(0,0,0,0.65);
+    cursor: pointer;
+    transition: filter 0.12s, transform 0.1s, box-shadow 0.15s;
   }
-  .card:hover, .card:active { border-color: #ffd040; transform: translateY(-3px); }
+  .card:hover, .card:active { filter: brightness(1.2); transform: translateY(-3px); }
   .card h3 { font-size: clamp(12px, 2.1vmin, 15px); letter-spacing: 0.1em;
-             color: #ffd040; margin-bottom: 8px; }
+             font-weight: 900;
+             color: #ffd040; text-shadow: 1px 1px 0 #000;
+             margin-bottom: 8px; }
   .card p { font-size: clamp(10px, 1.8vmin, 12px); opacity: 0.75;
             line-height: 1.5; margin-bottom: 4px; }
   .card .cost { display: block; margin-top: 8px; color: #50e0f0;
                 font-size: clamp(11px, 1.9vmin, 13px); letter-spacing: 0.12em; }
   .card.disabled { opacity: 0.35; pointer-events: none; }
-  /* rarity accents */
-  .card.rar1 { border-color: rgba(74, 159, 255, 0.65);
-               box-shadow: 0 0 14px rgba(74, 159, 255, 0.15); }
-  .card.rar1:hover { border-color: #4a9fff; }
-  .card.rar2 { border-color: rgba(192, 96, 255, 0.7);
-               box-shadow: 0 0 18px rgba(192, 96, 255, 0.2); }
-  .card.rar2:hover { border-color: #c060ff; }
+  /* rarity accents (κρατούν το bevel, αλλάζουν απόχρωση + λάμψη) */
+  .card.rar1 { border-color: #4a9fff #0a2038 #0a2038 #4a9fff;
+               box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
+                           0 0 16px rgba(74, 159, 255, 0.25); }
+  .card.rar2 { border-color: #c060ff #240a38 #240a38 #c060ff;
+               box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
+                           0 0 20px rgba(192, 96, 255, 0.3); }
   .wpn-preview {
     display: block; margin: 0 auto 6px;
     height: clamp(40px, 7vmin, 56px);

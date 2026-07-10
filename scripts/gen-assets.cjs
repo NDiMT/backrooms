@@ -63,6 +63,22 @@ const TEXTURES = {
 const texPrompt = d =>
   `Retro 90s DOOM-style pixel art texture for an FPS game: seamless tileable SQUARE wall texture. ${d}. Chunky pixels, hard edges, dark gritty palette. The texture fills the entire image edge to edge with no border. No text, no watermark.`;
 
+// ---------- UI: mugshot, pickups, status bar ----------
+const UI_JOBS = {
+  faces: {
+    kind: 'faceSheet',
+    prompt: `${STYLE} HUD status-bar face portrait sprite sheet, exactly like the iconic DOOM guy face in the middle of the DOOM status bar. ONE horizontal row with 5 versions of the SAME rugged male space marine head with short brown hair, looking straight ahead, separated by wide pure magenta gaps: (1) calm and alert, (2) grinning confidently, (3) grimacing in pain with eyes squeezed, (4) badly wounded, face covered in blood, exhausted, (5) dead, eyes closed, grey skin. Head and neck only, front view.`,
+  },
+  pickups: {
+    kind: 'pickupSheet',
+    prompt: `${STYLE} ONE horizontal row of 5 small floor pickup item sprites for a retro FPS, separated by wide pure magenta gaps: (1) white medkit box with a red cross, (2) open box of rifle bullets, (3) glowing blue energy cell battery pack, (4) small pile of glowing cyan scrap metal, (5) glowing purple crystal shard. Each item small and readable.`,
+  },
+  statusbar: {
+    kind: 'panel',
+    prompt: `Retro 90s DOOM-style pixel art: a very WIDE dark gunmetal HUD status bar panel texture, like the DOOM status bar background: brushed dark grey-green metal with rivets, beveled edges and several recessed rectangular slots. Wide landscape aspect ratio, fills the whole image. No text, no numbers, no icons, no watermark.`,
+  },
+};
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function generate(name, prompt) {
@@ -222,6 +238,26 @@ async function processAll(jobs) {
         const s = Math.min(c.width, c.height);
         const sq = crop(c, { x0: (c.width - s) / 2, y0: (c.height - s) / 2, w: s, h: s });
         out[`tex_${job.name}`] = resize(sq, 64, 64).toDataURL('image/png');
+      } else if (job.kind === 'faceSheet') {
+        c = chromaKey(c);
+        const frames = splitRow(c, 5);
+        const names = ['ok', 'grin', 'pain', 'low', 'dead'];
+        for (let i = 0; i < names.length && i < frames.length; i++) {
+          const f = frames[i];
+          const h = 30, w = Math.max(8, Math.round(f.width * h / f.height));
+          out[`face_${names[i]}`] = resize(f, w, h).toDataURL('image/png');
+        }
+      } else if (job.kind === 'pickupSheet') {
+        c = chromaKey(c);
+        const frames = splitRow(c, 5);
+        const names = ['medkit', 'rounds', 'cells', 'scrap', 'core'];
+        for (let i = 0; i < names.length && i < frames.length; i++) {
+          const f = frames[i];
+          const h = 40, w = Math.max(8, Math.round(f.width * h / f.height));
+          out[`pickup_${names[i]}`] = resize(f, w, h).toDataURL('image/png');
+        }
+      } else if (job.kind === 'panel') {
+        out['ui_statusbar'] = resize(c, 320, 36).toDataURL('image/png');
       }
     }
     return out;
@@ -246,6 +282,9 @@ async function processAll(jobs) {
   if (what === 'all' || what === 'textures') {
     for (const [n, d] of Object.entries(TEXTURES)) gen.push(['t_' + n, texPrompt(d)]);
   }
+  if (what === 'all' || what === 'ui') {
+    for (const [n, j] of Object.entries(UI_JOBS)) gen.push(['u_' + n, j.prompt]);
+  }
 
   console.log(`Παραγωγή ${gen.length} εικόνων με ${MODEL}…`);
   for (const [name, prompt] of gen) {
@@ -267,6 +306,10 @@ async function processAll(jobs) {
     if (name.startsWith('e_')) jobs.push({ kind: 'enemy', name: name.slice(2), dataUrl });
     else if (name.startsWith('w_')) jobs.push({ kind: 'weapon', name: name.slice(2), dataUrl });
     else if (name.startsWith('t_')) jobs.push({ kind: 'tex', name: name.slice(2), dataUrl });
+    else if (name.startsWith('u_')) {
+      const n = name.slice(2);
+      jobs.push({ kind: UI_JOBS[n] ? UI_JOBS[n].kind : 'panel', name: n, dataUrl });
+    }
   }
   const results = await processAll(jobs);
   let count = 0;

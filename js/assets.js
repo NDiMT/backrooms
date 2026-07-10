@@ -938,6 +938,8 @@ const Assets = (() => {
       dead: px(faceDead, facePal, 3),
     };
 
+    A.ui = { statusbar: null }; // προαιρετικό AI panel (ui_statusbar.png)
+
     return A;
   }
 
@@ -983,6 +985,7 @@ const Assets = (() => {
   }
   for (const key of Object.keys(A.pickups)) reg(`pickup_${key}`, img => { A.pickups[key] = img; });
   for (const key of Object.keys(A.face)) reg(`face_${key}`, img => { A.face[key] = img; });
+  reg('ui_statusbar', img => { A.ui.statusbar = img; });
 
   A.OVERRIDE_KEYS = OVERRIDES.map(o => o.path);
 
