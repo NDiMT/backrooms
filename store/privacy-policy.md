@@ -1,13 +1,13 @@
-# DRIFTLAND — Privacy Policy
+# DEEPER — Privacy Policy
 
 _Last updated: 11 July 2026_
 
-**DRIFTLAND** ("the Game") is developed by Happyonline ("we").
+**DEEPER** ("the Game") is developed by Happyonline ("we").
 
 ## Data we collect
 
 The Game runs fully offline and **does not collect, store or transmit any
-personal data**. Game progress (your island, inventory and settings) is
+personal data**. Game progress (your upgrades, resources and settings) is
 saved locally on your device only and never leaves it.
 
 The Game does not require an account, does not access your contacts,

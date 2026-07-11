@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>DRIFTLAND — Island Survival</title>
+<title>DEEPER — Idle Descent</title>
 <style>
   @font-face {
     font-family: 'Press Start 2P';
@@ -20,7 +20,7 @@
       -webkit-tap-highlight-color: transparent; }
   html, body {
     width: 100%; height: 100%; overflow: hidden;
-    background: #0a1520;
+    background: #0c0a06;
     font-family: 'VT323', monospace;
     color: #e8e4d8;
     user-select: none; -webkit-user-select: none;
@@ -31,7 +31,7 @@
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
   }
-  canvas#screen { image-rendering: pixelated; background: #14324a; }
+  canvas#screen { image-rendering: pixelated; background: #16130c; }
 
   /* -------- HUD -------- */
   #hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
@@ -39,7 +39,7 @@
 
   .bars {
     position: absolute; top: calc(8px + env(safe-area-inset-top)); left: 10px;
-    width: 130px; pointer-events: none;
+    width: 120px; pointer-events: none;
   }
   .bar {
     height: 12px; margin-bottom: 5px;
@@ -49,24 +49,29 @@
   }
   .bar .fill { position: absolute; inset: 1px; transform-origin: left; }
   #hp-fill { background: linear-gradient(#e85040, #b02818); width: 100%; }
-  #food-fill { background: linear-gradient(#e8a040, #b07018); width: 100%; }
   .bar .ico {
     position: absolute; left: -2px; top: -3px; font-size: 11px;
     text-shadow: 1px 1px 0 #000;
   }
 
-  #day-label {
+  #floor-label {
     position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 10px;
     font-family: 'Press Start 2P', monospace; font-size: 9px;
-    color: #ffe9b0; text-shadow: 1px 1px 0 #000;
-    pointer-events: none;
+    color: #ffe86a; text-shadow: 1px 1px 0 #000;
+    text-align: right; pointer-events: none;
   }
+  #run-loot {
+    position: absolute; top: calc(24px + env(safe-area-inset-top)); right: 10px;
+    font-size: 19px; color: #e8e4d8; text-shadow: 1px 1px 0 #000;
+    text-align: right; pointer-events: none;
+  }
+  #run-loot .core { color: #c88aff; }
 
   #hint {
-    position: absolute; top: calc(46px + env(safe-area-inset-top)); left: 50%;
+    position: absolute; top: calc(48px + env(safe-area-inset-top)); left: 50%;
     transform: translateX(-50%);
     max-width: 84%;
-    font-size: 17px; color: #cfe8c0; text-align: center;
+    font-size: 17px; color: #d8d0a8; text-align: center;
     text-shadow: 1px 1px 0 #000;
     pointer-events: none;
   }
@@ -85,26 +90,22 @@
     position: absolute; right: 18px; bottom: calc(30px + env(safe-area-inset-bottom));
     min-width: 0; padding: 0; margin: 0;
     width: 84px; height: 84px; border-radius: 50%;
-    background: rgba(255, 232, 170, 0.14);
-    border: 3px solid rgba(255, 232, 170, 0.55);
+    background: rgba(255, 232, 106, 0.14);
+    border: 3px solid rgba(255, 232, 106, 0.55);
     display: flex; align-items: center; justify-content: center;
     font-size: 34px;
   }
-  #act-btn:active { background: rgba(255, 232, 170, 0.35); }
+  #act-btn:active { background: rgba(255, 232, 106, 0.35); }
   .side-btn {
     position: absolute; width: 52px; height: 52px; border-radius: 50%;
     min-width: 0; padding: 0; margin: 0;
-    background: rgba(20, 32, 46, 0.75);
-    border: 2px solid rgba(200, 220, 240, 0.55);
-    color: #eef4fa;
+    background: rgba(30, 26, 16, 0.75);
+    border: 2px solid rgba(220, 210, 170, 0.55);
+    color: #f0ecd8;
     display: flex; align-items: center; justify-content: center;
     font-family: 'Press Start 2P', monospace; font-size: 7px;
     text-shadow: 1px 1px 0 #000;
   }
-  #inv-btn { right: 24px; bottom: calc(136px + env(safe-area-inset-bottom)); }
-  #craft-btn { right: 86px; bottom: calc(112px + env(safe-area-inset-bottom)); }
-  #torch-btn { right: 122px; bottom: calc(38px + env(safe-area-inset-bottom)); font-size: 18px; }
-  #torch-btn.on { background: rgba(255, 180, 60, 0.4); border-color: #ffb43c; }
   #pause-btn { left: 12px; top: calc(34px + env(safe-area-inset-top));
     width: 34px; height: 34px; font-size: 12px; }
 
@@ -112,15 +113,15 @@
   #joy-zone { position: absolute; left: 0; bottom: 0; width: 55%; height: 46%; }
   #joy-base {
     position: fixed; width: 100px; height: 100px; border-radius: 50%;
-    background: rgba(220, 230, 240, 0.08);
-    border: 2px solid rgba(220, 230, 240, 0.3);
+    background: rgba(240, 230, 200, 0.08);
+    border: 2px solid rgba(240, 230, 200, 0.3);
     pointer-events: none;
   }
   #joy-stick {
     position: absolute; left: 50%; top: 50%;
     width: 44px; height: 44px; margin: -22px;
     border-radius: 50%;
-    background: rgba(220, 230, 240, 0.35);
+    background: rgba(240, 230, 200, 0.35);
   }
   body:not(.touch-mode) #joy-zone { display: none; }
   body:not(.touch-mode) #act-btn,
@@ -132,22 +133,22 @@
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     text-align: center; padding: 20px;
-    background: rgba(8, 12, 20, 0.92);
+    background: rgba(10, 8, 4, 0.94);
   }
   .hidden { display: none !important; }
 
   #title {
     background:
-      linear-gradient(rgba(8, 12, 20, 0.25), rgba(8, 12, 20, 0.6)),
-      #14324a;
+      linear-gradient(rgba(10, 8, 4, 0.3), rgba(10, 8, 4, 0.75)),
+      #16130c;
     background-size: cover; background-position: center;
     image-rendering: pixelated;
   }
   h1 {
     font-family: 'Press Start 2P', monospace;
-    font-size: clamp(24px, 8vmin, 42px);
-    color: #ffe9b0;
-    text-shadow: 3px 3px 0 #7a4a18, 6px 6px 0 rgba(0, 0, 0, 0.6);
+    font-size: clamp(26px, 9vmin, 46px);
+    color: #ffe86a;
+    text-shadow: 3px 3px 0 #5a4a10, 6px 6px 0 rgba(0, 0, 0, 0.7);
     margin-bottom: 6px; letter-spacing: 0.04em;
   }
   .sub {
@@ -158,85 +159,84 @@
   h2 {
     font-family: 'Press Start 2P', monospace;
     font-size: clamp(14px, 4.5vmin, 22px);
-    color: #ffe9b0; text-shadow: 2px 2px 0 rgba(0,0,0,0.7);
+    color: #ffe86a; text-shadow: 2px 2px 0 rgba(0,0,0,0.7);
     margin-bottom: 14px;
   }
   button {
     font-family: 'Press Start 2P', monospace;
     font-size: 11px; letter-spacing: 0.05em;
-    color: #e8e4d8; background: #1d3145;
+    color: #e8e4d8; background: #3a3218;
     border: 0;
-    border-top: 3px solid #3d5a75; border-left: 3px solid #3d5a75;
-    border-bottom: 3px solid #0c1622; border-right: 3px solid #0c1622;
+    border-top: 3px solid #6a5c2c; border-left: 3px solid #6a5c2c;
+    border-bottom: 3px solid #16120a; border-right: 3px solid #16120a;
     padding: 14px 22px; margin: 6px;
-    cursor: pointer; min-width: 220px;
+    cursor: pointer; min-width: 230px;
   }
   button:active { transform: translate(1px, 1px); }
-  button.primary { background: #2c5a2e; border-top-color: #55915a;
-    border-left-color: #55915a; border-bottom-color: #12280f;
-    border-right-color: #12280f; color: #eaffdf; }
+  button.primary { background: #6a5410; border-top-color: #a8892c;
+    border-left-color: #a8892c; border-bottom-color: #2a220a;
+    border-right-color: #2a220a; color: #fff2c0; }
+  button.ad { background: #2c4a5a; border-top-color: #55809a;
+    border-left-color: #55809a; border-bottom-color: #101e26;
+    border-right-color: #101e26; color: #d8f0ff; }
   button:disabled { opacity: 0.45; }
+
+  /* -------- hub -------- */
+  #hub {
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding-top: calc(18px + env(safe-area-inset-top));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  #hub h2 { margin-top: 4px; }
+  #hub-bank {
+    font-size: 22px; margin-bottom: 2px;
+  }
+  #hub-bank .core { color: #c88aff; }
+  #hub-sub { font-size: 16px; opacity: 0.8; margin-bottom: 12px; }
+  #hub .actions button { display: block; width: min(320px, 86vw); }
+  #up-head {
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: #d8c888; margin: 16px 0 8px;
+  }
+  #upgrade-list { width: min(430px, 100%); text-align: left; }
+  .up-row {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    padding: 8px; margin-bottom: 6px;
+  }
+  .up-row .ic { font-size: 24px; width: 32px; text-align: center; }
+  .up-row .ci { flex: 1; display: flex; flex-direction: column; }
+  .up-row .ci b { font-size: 18px; }
+  .up-row .ci b small { opacity: 0.7; font-weight: normal; }
+  .up-row .ci .d { font-size: 14px; opacity: 0.8; }
+  .up-row button { min-width: 92px; padding: 10px 8px; margin: 0; font-size: 8px; }
+  .up-row.maxed { opacity: 0.6; }
+  #hub-stats { font-size: 15px; opacity: 0.7; margin-top: 14px; }
 
   .panel {
     position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
     width: min(430px, 100%);
     max-height: 72%;
     z-index: 25;
-    background: rgba(16, 24, 34, 0.96);
-    border-top: 3px solid #3d5a75;
+    background: rgba(20, 16, 8, 0.96);
+    border-top: 3px solid #6a5c2c;
     padding: 12px 12px calc(16px + env(safe-area-inset-bottom));
     overflow-y: auto;
+    text-align: center;
   }
   .panel h3 {
     font-family: 'Press Start 2P', monospace; font-size: 10px;
-    color: #ffe9b0; margin: -12px -12px 10px; padding: 12px;
-    display: flex; justify-content: space-between; align-items: center;
-    position: sticky; top: -12px; z-index: 2;
-    background: rgba(16, 24, 34, 0.98);
+    color: #ffe86a; margin: -12px -12px 10px; padding: 12px;
+    background: rgba(20, 16, 8, 0.98);
   }
-  .panel h3 button { min-width: 0; padding: 8px 12px; margin: 0; font-size: 9px; }
+  .panel button { display: block; margin: 6px auto; width: min(320px, 92%); }
+  #elev-info { font-size: 18px; margin-bottom: 8px; }
 
-  .grid {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
-    margin-bottom: 8px;
-  }
-  .slot {
-    aspect-ratio: 1; background: rgba(255, 255, 255, 0.06);
-    border: 2px solid rgba(255, 255, 255, 0.18);
-    position: relative;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .slot img { width: 70%; height: 70%; image-rendering: pixelated; }
-  .slot .n {
-    position: absolute; right: 3px; bottom: 1px;
-    font-size: 15px; color: #ffe9b0; text-shadow: 1px 1px 0 #000;
-  }
-  .slot.empty { opacity: 0.5; }
-  .panel small.note { font-size: 15px; opacity: 0.7; }
+  .stats { font-size: 19px; line-height: 1.5; margin-bottom: 14px; }
 
-  .craft-head {
-    font-family: 'Press Start 2P', monospace; font-size: 9px;
-    color: #9fd0ff; margin: 10px 0 6px;
-  }
-  .craft-row {
-    display: flex; align-items: center; gap: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(255, 255, 255, 0.12);
-    padding: 7px; margin-bottom: 6px;
-  }
-  .craft-row img { width: 36px; height: 36px; image-rendering: pixelated; }
-  .craft-row .ci { flex: 1; display: flex; flex-direction: column; }
-  .craft-row .ci b { font-size: 18px; }
-  .craft-row .ci small { font-size: 14px; opacity: 0.8; }
-  .craft-row .ci small .ok { color: #9fe09f; }
-  .craft-row .ci small .no { color: #e09f9f; }
-  .craft-row button { min-width: 0; padding: 10px 12px; margin: 0; font-size: 8px; }
-  .craft-row.disabled { opacity: 0.55; }
-
-  #raft-panel { text-align: center; }
-  #raft-stage { font-size: 20px; color: #ffe9b0; margin-bottom: 6px; }
-  #raft-cost { font-size: 16px; margin-bottom: 10px; }
-  #raft-cost .ok { color: #9fe09f; } #raft-cost .no { color: #e09f9f; }
+  #daily-grid { font-size: 30px; letter-spacing: 3px; margin: 6px 0 10px; }
 
   #ad-stub {
     position: absolute; inset: 0; z-index: 60;
@@ -246,8 +246,6 @@
     font-family: 'Press Start 2P', monospace; font-size: 11px; color: #9fd0ff;
   }
   #ad-stub small { font-size: 8px; opacity: 0.6; }
-
-  .stats { font-size: 19px; line-height: 1.5; margin-bottom: 14px; }
 
   /* scanlines για ρετρό υφή */
   #scan {
@@ -266,9 +264,9 @@
   <div id="hud" class="hidden">
     <div class="bars">
       <div class="bar"><span class="ico">❤</span><div class="fill" id="hp-fill"></div></div>
-      <div class="bar"><span class="ico">🍖</span><div class="fill" id="food-fill"></div></div>
     </div>
-    <div id="day-label">DAY 1 ☀</div>
+    <div id="floor-label">FLOOR 1</div>
+    <div id="run-loot">⚙ 0</div>
     <button id="pause-btn" class="side-btn">II</button>
     <div id="hint"></div>
     <div id="toast"></div>
@@ -276,63 +274,64 @@
     <div id="joy-zone"></div>
     <div id="joy-base" class="hidden"><div id="joy-stick"></div></div>
     <button id="act-btn"><span id="act-icon">✊</span></button>
-    <button id="inv-btn" class="side-btn">INV</button>
-    <button id="craft-btn" class="side-btn">CRAFT</button>
-    <button id="torch-btn" class="side-btn hidden">🔥</button>
   </div>
 
   <!-- PANELS -->
-  <div id="inv-panel" class="panel hidden">
-    <h3>BACKPACK <button id="inv-close">CLOSE</button></h3>
-    <div class="grid" id="inv-grid"></div>
-    <small class="note" id="inv-hint"></small>
-  </div>
-
-  <div id="craft-panel" class="panel hidden">
-    <h3>CRAFTING <button id="craft-close">CLOSE</button></h3>
-    <div id="craft-list"></div>
-  </div>
-
-  <div id="chest-panel" class="panel hidden">
-    <h3>CHEST <button id="chest-close">CLOSE</button></h3>
-    <div class="grid" id="chest-grid"></div>
-    <small class="note">Your backpack — tap to store:</small>
-    <div class="grid" id="chest-inv-grid"></div>
-  </div>
-
-  <div id="raft-panel" class="panel hidden">
-    <h3>ESCAPE RAFT <button id="raft-close">CLOSE</button></h3>
-    <div id="raft-stage"></div>
-    <div id="raft-cost"></div>
-    <button class="primary" id="raft-build-btn">BUILD</button>
-    <button class="primary hidden" id="raft-sail-btn">⛵ SAIL AWAY</button>
+  <div id="elev-panel" class="panel hidden">
+    <h3>🛗 ELEVATOR</h3>
+    <div id="elev-info"></div>
+    <button class="primary" id="elev-deeper">⬇ GO DEEPER</button>
+    <button id="elev-cashout"></button>
+    <button class="ad" id="elev-cashout2"></button>
   </div>
 
   <div id="pause-panel" class="panel hidden">
     <h3>PAUSED</h3>
     <button class="primary" id="resume-btn">RESUME</button>
-    <button id="savequit-btn">SAVE & QUIT</button>
+    <button id="abandon-btn">ABANDON RUN (KEEP 40%)</button>
   </div>
 
   <!-- OVERLAYS -->
   <div id="title" class="overlay">
-    <h1>DRIFTLAND</h1>
-    <div class="sub">ISLAND SURVIVAL</div>
-    <button class="primary" id="start-btn">NEW GAME</button>
-    <button id="continue-btn" class="hidden">CONTINUE</button>
+    <h1>DEEPER</h1>
+    <div class="sub">THE ONLY WAY OUT IS DOWN</div>
+    <button class="primary" id="enter-btn">ENTER</button>
+  </div>
+
+  <div id="hub" class="overlay hidden">
+    <h2>THE SURFACE</h2>
+    <div id="hub-bank">⚙ 0 · <span class="core">◆ 0</span></div>
+    <div id="hub-sub"></div>
+    <div class="actions">
+      <button class="primary" id="descend-btn">⬇ DESCEND</button>
+      <button id="daily-btn">📅 DAILY FLOOR</button>
+    </div>
+    <div id="up-head">UPGRADES</div>
+    <div id="upgrade-list"></div>
+    <div id="hub-stats"></div>
+  </div>
+
+  <div id="offline" class="overlay hidden">
+    <h2>WHILE YOU WERE AWAY…</h2>
+    <p class="stats">Your scavenger drones brought back<br>
+      <b id="offline-amt" style="font-size:26px">0</b> ⚙ scrap</p>
+    <button class="ad" id="offline-claim2">📺 CLAIM ×2 (AD)</button>
+    <button id="offline-claim">CLAIM</button>
   </div>
 
   <div id="dead" class="overlay hidden">
-    <h2>YOU COLLAPSED</h2>
-    <p class="stats">Your belongings dropped where you fell.</p>
-    <button class="primary" id="revive-btn">📺 RESCUE FLARE (AD) — REVIVE HERE</button>
-    <button id="respawn-btn">RESPAWN AT CAMP</button>
+    <h2>THE DARK TAKES YOU</h2>
+    <p class="stats" id="dead-info"></p>
+    <button class="ad" id="revive-btn">📺 REVIVE (AD) — KEEP YOUR SCRAP</button>
+    <button id="giveup-btn">GIVE UP — KEEP 40%</button>
   </div>
 
-  <div id="win" class="overlay hidden">
-    <h2>YOU ESCAPED!</h2>
-    <p class="stats" id="win-stats"></p>
-    <button class="primary" id="win-new-btn">NEW ISLAND</button>
+  <div id="daily-result" class="overlay hidden">
+    <h2>DAILY FLOOR</h2>
+    <div id="daily-grid"></div>
+    <p class="stats" id="daily-score-line"></p>
+    <button class="primary" id="share-btn">📣 SHARE</button>
+    <button id="daily-close">BACK TO SURFACE</button>
   </div>
 
   <!-- Ad stub (προσομοίωση rewarded ad μέχρι να μπει πραγματικό SDK) -->
@@ -345,7 +344,6 @@
   <script src="js/defs.js"></script>
   <script src="js/assets.js"></script>
   <script src="js/world.js"></script>
-  <script src="js/inventory.js"></script>
   <script src="js/entities.js"></script>
   <script src="js/save.js"></script>
   <script src="js/audio.js"></script>

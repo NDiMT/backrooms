@@ -1,6 +1,6 @@
 {
-  "appId": "gr.happyonline.driftland",
-  "appName": "DRIFTLAND",
+  "appId": "gr.happyonline.deeper",
+  "appName": "DEEPER",
   "webDir": "www",
   "android": {
     "allowMixedContent": false

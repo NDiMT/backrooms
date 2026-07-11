@@ -1,52 +1,66 @@
-# DRIFTLAND — Island Survival
+# DEEPER — Idle Descent
 
-A **castaway survival-crafting game** in retro pixel art, written in pure
-JavaScript (Canvas 2D, 288×512 internal portrait resolution). Mobile-first
-(portrait, one-handed), fully offline, with automated Android APK builds.
-All sprites, tiles and animations are AI pixel art generated with
-[PixelLab](https://pixellab.ai).
+An **idle descent roguelite** in retro pixel art, written in pure
+JavaScript (Canvas 2D, 288×512 internal portrait resolution).
+Mobile-first (portrait, one-handed), fully offline, with automated
+Android APK builds. Character sprites are AI pixel art generated with
+[PixelLab](https://pixellab.ai); floors and UI are procedural.
 
 ## The game
 
-You are the only survivor of a shipwreck. Explore a **procedurally
-generated island**, gather resources, craft tools, build a camp and
-survive the nights — hungry shades roam in the dark. Salvage the old
-wreck and build your **escape raft in four stages** to win.
+An elevator that only goes down. Descend through **endless procedurally
+generated floors** that start mundane — offices, parking, a dead mall —
+and slowly go *wrong*, all the way to the Backrooms. Loot scrap, dodge
+the shades that hunt in the dark, and decide at every elevator:
+**cash out, or go deeper?**
 
-- **Gather**: chop trees (wood), mine rocks (stone/metal), pick berries
-  and fiber, loot driftwood and the shipwreck.
-- **Craft**: axe, pickaxe, spear, torch, rope, cloth, cooked meals.
-- **Build**: campfire (light + cooking), workbench (tier-2 recipes),
-  palisade walls, storage chest, bed (respawn point + sleep through night).
-- **Survive**: hunger, day/night cycle, boars that fight back, night
-  shades that fear the light.
-- **Escape**: four raft stages of increasing cost → sail away → win.
-- **Persistence**: auto-save to localStorage; continue any time; death
-  drops your backpack where you fell — go get it back.
+- **Descend**: every floor is a procedural maze of rooms and corridors
+  with an entry and an exit elevator. Every 10 floors a new biome —
+  OFFICES → PARKING → THE MALL → THE POOLS → THE BACKROOMS.
+- **Loot**: scrap piles and crates hold scrap, medkits, flashlight
+  batteries, keycards (some exits are locked) and rare **cores**
+  (permanent +scrap/+damage).
+- **Fight or flee**: shades fear your flashlight and hunt in the dark.
+  Every 10th floor a **guardian boss** blocks the elevator — kill it to
+  unlock a permanent **checkpoint** (runs start deeper).
+- **Risk it**: dying loses most of your run scrap. Cashing out banks it.
+  The elevator always asks: *deeper?*
+- **Upgrade** (the surface): speed, vitality, damage, flashlight, loot
+  bag — and **scavenger drones** that earn scrap while you're away
+  (idle/offline earnings).
+- **Daily floor**: one attempt per day, same floor for everyone,
+  99 seconds — share your emoji-grid result.
+- **Persistence**: auto-save to localStorage.
 
 ## Controls
 
 | Platform | Controls |
 | --- | --- |
-| Mobile (portrait) | Drag lower-left = move · big ACT button = context action (chop/mine/attack/pick up/interact) · INV / CRAFT / TORCH buttons |
-| Desktop | WASD move · E/Space = ACT · I inventory · C crafting · T torch · Esc pause |
+| Mobile (portrait) | Drag lower-left = move · big ACT button = context action (attack/loot/elevator/vault) |
+| Desktop | WASD move · E/Space = ACT · Esc/P pause |
 
 Open `index.html` directly — no server or build needed.
 
 ## Monetization scaffolding (js/monetize.js)
 
-Rewarded-ad hooks are wired into gameplay (revive-on-death) and run in
-**stub mode** — a simulated ad — until a real provider is configured:
-AdMob (Capacitor), Poki or CrazyGames (web portals). Analytics events
-(game_start, craft, build, raft_stage, death, win, ad_rewarded) push to
-`window.dataLayer`, ready for GA4. Store listing draft and privacy policy
-live in `store/`.
+Rewarded-ad hooks are wired into gameplay and run in **stub mode** — a
+simulated ad — until a real provider is configured (AdMob via Capacitor,
+Poki or CrazyGames for web portals):
+
+- **Revive** — keep your scrap and continue the run.
+- **Cash out ×2** — double the banked scrap at the elevator.
+- **Vault** — open the sealed bonus room on a floor.
+- **Offline ×2** — double the drones' offline earnings.
+
+Analytics events (game_start, run_start, floor_reach, boss_kill, death,
+cashout, upgrade, daily_score, ad_rewarded) push to `window.dataLayer`,
+ready for GA4. Store listing draft and privacy policy live in `store/`.
 
 ## Download the APK
 
 Built automatically by GitHub Actions on every push:
-**Releases → [`android-latest`](../../releases/tag/android-latest) →
-`driftland.apk`** (allow "install from unknown sources").
+**Releases → [`deeper-latest`](../../releases/tag/deeper-latest) →
+`deeper.apk`** (allow "install from unknown sources").
 
 ### Local build (Node 18+, JDK 17, Android SDK)
 ```bash
@@ -59,34 +73,39 @@ cd android && ./gradlew assembleDebug
 
 ## Tech
 
-- **Chunked tilemap renderer**: το νησί (128×128 tiles) γίνεται render σε
-  16×16 chunks με cache — σταθερά 60fps σε κινητά.
-- **Procedural island**: value noise + radial falloff → βιότοποι
-  (θάλασσα, παραλία, λιβάδι, ζούγκλα, βράχια), deterministic από seed.
-- **Day/night lighting**: σκοτάδι με «τρύπες» φωτός (radial gradients,
-  destination-out) γύρω από παίκτη/δάδα/φωτιές.
-- **PixelLab art pipeline** (`scripts/gen-art.cjs`): tiles, props, hero
-  με 3-direction walk cycles (μέσω `/rotate` + `animate-with-text` με
-  τη συνταγή συνέπειας: image_guidance_scale 3.0, ρητό direction,
-  color_image palette lock, inpainting anchor), mobs, item icons, title
-  screen. Procedural canvas fallbacks για κάθε γραφικό.
-- **WebAudio**: synthesized ήχοι + ambience ημέρας/νύχτας, χωρίς αρχεία.
+- **Procedural floors**: δωμάτια + Γ-διάδρομοι σε 30×30 grid,
+  deterministic από seed· κλειδωμένες έξοδοι με keycard, σφραγισμένα
+  vaults που ανοίγουν με rewarded ad.
+- **Biome tiles**: procedural 26×26 tiles ανά biome (palette-driven),
+  με PNG override hooks για μελλοντικό PixelLab art.
+- **Lighting**: μόνιμο σκοτάδι ανά biome με «τρύπες» φωτός
+  (radial gradients, destination-out) γύρω από παίκτη/ασανσέρ/vault —
+  ο φακός είναι και όπλο: οι shades διστάζουν στο φως.
+- **Idle economy**: drones με offline earnings (capped ώρες, ×2 με ad),
+  checkpoints ανά 10 ορόφους, exponential upgrade curves στο
+  `js/defs.js` — όλα τα tuning numbers σε ένα αρχείο.
+- **Daily floor**: seed από την UTC ημερομηνία — ίδιος όροφος για
+  όλους, emoji-grid share (Web Share API / clipboard).
+- **PixelLab sprites**: ο ήρωας (3-direction walk cycles) και το shade
+  προέρχονται από το υπάρχον asset pipeline· procedural canvas
+  fallbacks για κάθε γραφικό, το παιχνίδι τρέχει και χωρίς PNG.
+- **WebAudio**: synthesized ήχοι + liminal ambience (βουητό κτηρίου,
+  τρεμόπαιγμα φθορισμού), χωρίς αρχεία ήχου.
 
 ## Layout
 
 ```
-index.html            Portrait UI: HUD, panels (inventory/craft/chest/raft)
-js/defs.js            Items, recipes, buildables, raft stages, tuning
+index.html            Portrait UI: HUD, hub, elevator/pause panels, overlays
+js/defs.js            Biomes, upgrades, tuning
 js/assets.js          Procedural art + PNG overrides (assets/*.png)
-js/world.js           Island procgen + chunked tile rendering
-js/inventory.js       Slot inventory (20 θέσεις, stacks)
-js/entities.js        Mobs (crab/boar/shade), drops, resource hits
-js/save.js            localStorage save/load
+js/world.js           Floor generator, collision, tile renderer
+js/entities.js        Shades/boss, pickups, loot props
+js/save.js            Meta progression σε localStorage
 js/audio.js           WebAudio synth + ambience
-js/monetize.js        Rewarded ads / analytics scaffolding (stub mode)
-js/touch.js           Portrait joystick
-js/main.js            Loop, day/night, spawns, UI, raft, death/win
-scripts/gen-art.cjs   PixelLab asset pipeline
-store/                Play Store listing draft + privacy policy
-.github/workflows/    Automated APK builds (portrait)
+js/monetize.js        Rewarded-ad & analytics scaffolding (stub mode)
+js/touch.js           Joystick + ACT button
+js/main.js            Loop, states, run logic, daily, lighting
+scripts/gen-art.cjs   PixelLab asset pipeline (από το προηγούμενο παιχνίδι)
+store/                Store listing draft + privacy policy
+CONCEPT-ONE-MILLION.md Στρατηγική & γιατί υπάρχει αυτό το παιχνίδι
 ```

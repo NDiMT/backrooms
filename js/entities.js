@@ -1,47 +1,37 @@
-/* DRIFTLAND — Mobs (crab/boar/shade), drops στο έδαφος, χτυπήματα πόρων. */
+/* DEEPER — Shades (+ boss), pickups στο πάτωμα, χτυπήματα σε loot props. */
 
 const Entities = (() => {
   const T = Defs.T;
 
-  const MOB_STATS = {
-    crab:  { hp: 10, speed: 1.1, dmg: 0, aggro: 0, flee: true, drops: { meat_raw: 1 }, r: 0.3 },
-    boar:  { hp: 24, speed: 2.2, dmg: 8, aggro: 0,  retaliate: true,
-             drops: { meat_raw: 2 }, r: 0.38 },
-    shade: { hp: 22, speed: 1.7, dmg: 10, aggro: 7, night: true,
-             drops: { resin: 2 }, r: 0.34 },
-  };
-
-  class Mob {
-    constructor(kind, x, y) {
-      this.kind = kind;
-      this.st = MOB_STATS[kind];
+  class Shade {
+    constructor(x, y, floor, boss) {
       this.x = x; this.y = y;
-      this.hp = this.st.hp;
+      this.boss = !!boss;
+      this.hp = boss ? T.bossHp(floor) : T.shadeHp(floor);
+      this.maxHp = this.hp;
+      this.dmg = boss ? T.bossDmg(floor) : T.shadeDmg(floor);
+      this.speed = boss ? T.bossSpeed(floor) : T.shadeSpeed(floor);
+      this.r = boss ? 0.42 : 0.3;
       this.dir = Math.random() * Math.PI * 2;
       this.wanderT = 0;
-      this.angry = false;
-      this.flee = false;
+      this.moving = false;
       this.flash = 0;
       this.dead = false;
       this.attackCd = 0;
       this.faceLeft = false;
+      this.animT = 0;
     }
 
     hurt(dmg, game) {
       if (this.dead) return;
       this.hp -= dmg;
       this.flash = 0.12;
-      if (this.st.retaliate) this.angry = true;
-      if (this.st.flee) this.flee = true;
-      game.audio.mobHurt(this.kind);
+      game.audio.mobHurt();
       if (this.hp <= 0) {
         this.dead = true;
-        game.audio.mobDie(this.kind);
+        game.audio.mobDie(this.boss);
         game.spawnPuff(this.x, this.y);
-        for (const [item, n] of Object.entries(this.st.drops)) {
-          game.dropItem(item, n, this.x, this.y);
-        }
-        game.stats.kills++;
+        game.onShadeKilled(this);
       }
     }
 
@@ -52,108 +42,89 @@ const Entities = (() => {
       const p = game.player;
       const dx = p.x - this.x, dy = p.y - this.y;
       const dist = Math.hypot(dx, dy);
+      const inLight = game.inLight(this.x, this.y);
 
-      // shades: καίγονται στο φως της μέρας
-      if (this.st.night && game.isDay()) {
-        this.hp -= 14 * dt;
-        if (this.hp <= 0) {
-          this.dead = true;
-          game.spawnPuff(this.x, this.y);
-          return;
-        }
-      }
-
-      let vx = 0, vy = 0;
-      const chasing = (this.st.aggro && dist < this.st.aggro && !game.nearLight(this.x, this.y)) ||
-        (this.angry && dist < 9);
-      if (this.flee && dist < 6) {
-        vx = -dx / dist; vy = -dy / dist;
-      } else if (chasing && dist > 0.01) {
+      // στο φως διστάζουν· στο σκοτάδι μυρίζονται από μακριά
+      const aggro = inLight ? 3.2 : (this.boss ? 30 : 6.5);
+      let vx = 0, vy = 0, sp = this.speed;
+      if (dist < aggro && dist > 0.01) {
         vx = dx / dist; vy = dy / dist;
+        if (inLight) sp *= T.LIGHT_SLOW;
         if (dist < 0.75 && this.attackCd <= 0) {
-          this.attackCd = 1.1;
-          game.hurtPlayer(this.st.dmg, this);
+          this.attackCd = 1.0;
+          game.hurtPlayer(this.dmg, this);
         }
       } else {
         this.wanderT -= dt;
         if (this.wanderT <= 0) {
           this.wanderT = 1.5 + Math.random() * 2.5;
           this.dir = Math.random() * Math.PI * 2;
-          this.moving = Math.random() < 0.6;
+          this.moving = Math.random() < 0.65;
         }
         if (this.moving) { vx = Math.cos(this.dir); vy = Math.sin(this.dir); }
+        sp *= 0.45;
       }
       if (vx || vy) {
-        const sp = this.st.speed * ((this.flee || chasing) ? 1.4 : 0.5);
-        World.move(game.world, this, vx * sp * dt, vy * sp * dt, this.st.r);
+        World.move(game.world, this, vx * sp * dt, vy * sp * dt, this.r);
         this.faceLeft = vx < 0;
-        this.animT = (this.animT || 0) + dt * 6;
+        this.animT += dt * 6;
       }
     }
 
     sprite() {
-      const frames = Assets.mobs[this.kind];
-      return frames[((this.animT || 0) | 0) % frames.length];
+      const frames = Assets.mobs.shade;
+      return frames[(this.animT | 0) % frames.length];
     }
   }
 
-  /* Πεσμένο αντικείμενο στο έδαφος. */
-  class Drop {
-    constructor(item, n, x, y) {
-      this.item = item; this.n = n;
+  /* Αντικείμενο στο πάτωμα — μαζεύεται αυτόματα με το πέρασμα. */
+  class Pickup {
+    constructor(kind, n, x, y) {
+      this.kind = kind;                 // scrap | core | medkit | keycard | battery
+      this.n = n;
       this.x = x + (Math.random() - 0.5) * 0.5;
       this.y = y + (Math.random() - 0.5) * 0.5;
       this.bob = Math.random() * 6;
       this.taken = false;
-      this.age = 0;
     }
   }
 
-  /* Ζημιά σε prop πόρου. Επιστρέφει true αν καταστράφηκε. */
-  function hitProp(game, key, p, power, toolKind) {
-    const world = game.world;
-    const prop = world.props.get(key);
-    if (!prop) return false;
-    const [pc, prow] = key.split(',').map(Number);
-    const { x: px, y: py } = World.hexCenter ?
-      World.hexCenter(pc, prow) : { x: pc + 0.5, y: prow + 0.5 };
-    const K = prop.kind;
-
-    // το σωστό εργαλείο ελέγχεται στο act() — εδώ η ζημιά είναι πλήρης
-    prop.hp -= Math.max(0.5, power);
-    game.audio.hit(K);
-    game.spawnHitFx(px, py, K);
-
+  /* Χτύπημα σε loot prop (pile/crate). Επιστρέφει true αν έσπασε. */
+  function hitProp(game, key, prop) {
+    const [tx, ty] = key.split(',').map(Number);
+    const cx = tx + 0.5, cy = ty + 0.5;
+    prop.hp -= 1;
+    game.audio.hit(prop.kind);
+    game.spawnHitFx(cx, cy);
     if (prop.hp > 0) return false;
 
-    // καταστροφή → drops
-    const drops = {
-      tree: { wood: 3 }, palm: { wood: 2, fiber: 1 }, rock: { stone: 3 },
-      bush: { berry: 2, fiber: 1 }, driftwood: { wood: 2 },
-      wall: { wood: 1 }, chest: {}, workbench: { wood: 2 },
-      bed: { wood: 2 }, campfire: { stone: 2 }, firepit: { stone: 2 },
-    }[K] || {};
-    for (const [item, n] of Object.entries(drops)) game.dropItem(item, n, px, py);
-    if (K === 'tree' && Math.random() < 0.4) game.dropItem("resin", 1, px, py);
-    if (K === 'rock' && Math.random() < 0.3) game.dropItem("metal", 1, px, py);
-    if (K === 'chest' && prop.inv) {
-      for (const s of prop.inv) if (s) game.dropItem(s.item, s.n, px, py);
-    }
+    const f = game.run.floor;
+    game.world.props.delete(key);
+    game.spawnPuff(cx, cy);
 
-    if (K === 'bush') {
-      // ο θάμνος μένει και ξαναβγάζει καρπούς
-      prop.hp = 1;
-      prop.regrow = 90;
-      prop.looted = true;
-      World.invalidate(px, py);
-      return true;
+    if (prop.kind === 'pile') {
+      dropScrap(game, T.scrapPile(f), cx, cy);
+    } else {
+      dropScrap(game, T.crateScrap(f), cx, cy);
+      const r = Math.random();
+      if (r < T.crateCore(f)) game.pickups.push(new Pickup('core', 1, cx, cy));
+      else if (r < T.crateCore(f) + T.CRATE_MEDKIT) {
+        game.pickups.push(new Pickup('medkit', 1, cx, cy));
+      } else if (r < T.crateCore(f) + T.CRATE_MEDKIT + T.CRATE_BATTERY) {
+        game.pickups.push(new Pickup('battery', 1, cx, cy));
+      }
     }
-    world.props.delete(key);
-    game.markDirty(px, py);
-    World.invalidate(px, py);
-    game.stats.gathered++;
     return true;
   }
 
-  return { Mob, Drop, MOB_STATS, hitProp };
+  /* Σκόρπισμα scrap σε 2-4 «θραύσματα». */
+  function dropScrap(game, total, x, y) {
+    const parts = 2 + (Math.random() * 3 | 0);
+    for (let i = 0; i < parts; i++) {
+      const n = Math.max(1, Math.round(total / parts));
+      game.pickups.push(new Pickup('scrap', n, x, y));
+    }
+  }
+
+  return { Shade, Pickup, hitProp, dropScrap };
 })();

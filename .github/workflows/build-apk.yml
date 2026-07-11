@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches:
-      - claude/liminal-space-game-smnwr0
+      - claude/one-million-concept-xrjq3u
       - main
   workflow_dispatch:
 
@@ -69,33 +69,25 @@ jobs:
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-             dist/driftland.apk
+             dist/deeper.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: driftland-apk
-          path: dist/driftland.apk
+          name: deeper-apk
+          path: dist/deeper.apk
           if-no-files-found: error
-
-      - name: Remove stale release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # απομεινάρι του προηγούμενου παιχνιδιού στο ίδιο release tag
-          gh release delete-asset android-latest nekri-zoni.apk \
-            --repo "$GITHUB_REPOSITORY" --yes || true
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-latest
-          name: DRIFTLAND — Android (latest)
+          tag_name: deeper-latest
+          name: DEEPER — Android (latest)
           body: |
-            Automatically built APK of DRIFTLAND — a castaway island
-            survival-crafting game.
+            Automatically built APK of DEEPER — an idle descent roguelite
+            through endless liminal floors.
 
-            Download `driftland.apk` below and install it on Android
+            Download `deeper.apk` below and install it on Android
             (allow "install from unknown sources").
-          files: dist/driftland.apk
+          files: dist/deeper.apk
           make_latest: true
