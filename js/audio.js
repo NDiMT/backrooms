@@ -46,6 +46,12 @@ const GameAudio = (() => {
     }, 700);
   }
 
+  /* Resume μετά από interruption (τηλεφώνημα, backgrounding σε iOS/Android)
+     — χωρίς να δημιουργεί context πριν από user gesture. */
+  function resume() {
+    if (started && ctx.state === 'suspended') ctx.resume();
+  }
+
   /* βάθος 0..1: πιο σκοτεινά = πιο έντονο βουητό, πιο αχνός φθορισμός */
   function setDark(a) {
     if (!started) return;
@@ -84,7 +90,7 @@ const GameAudio = (() => {
   }
 
   return {
-    start, setDark,
+    start, resume, setDark,
     hit(kind) {
       if (kind === 'crate') { noise('lowpass', 900, 1, 0.08, 0.25, 0, 300); osc('square', 140, 90, 0.06, 0.1); }
       else { noise('highpass', 2400, 2, 0.05, 0.2); osc('square', 220, 140, 0.05, 0.08); }

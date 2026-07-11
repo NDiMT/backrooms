@@ -22,7 +22,7 @@ const World = (() => {
     };
   }
 
-  function generate(floorNum, seed) {
+  function generate(floorNum, seed, opts = {}) {
     const T = Defs.T;
     const W = T.FLOOR_W, H = T.FLOOR_H;
     const rand = mulberry(seed);
@@ -142,7 +142,7 @@ const World = (() => {
     const entry = { x: entryRoom.cx + 0.5, y: entryRoom.cy + 1.5 };
     const exit = { x: exitRoom.cx + 0.5, y: exitRoom.cy + 0.5 };
 
-    const boss = floorNum % 10 === 0;
+    const boss = !opts.noBoss && floorNum % 10 === 0;
 
     // ---- κλείδωμα εξόδου + keycard ----
     const locked = !boss && floorNum >= T.LOCK_FROM && rand() < T.LOCK_CHANCE;
@@ -165,7 +165,7 @@ const World = (() => {
         const t = at(x, y);
         if ((t !== FLOOR && t !== VAULT_FLOOR) || props.has(x + ',' + y)) continue;
         if (Math.abs(x + 0.5 - entry.x) < 2 && Math.abs(y + 0.5 - entry.y) < 2) continue;
-        props.set(x + ',' + y, { kind, hp: kind === 'crate' ? 3 : 2 });
+        props.set(x + ',' + y, { kind, hp: kind === 'crate' ? 3 : 2, tx: x, ty: y });
         return;
       }
     }
@@ -183,11 +183,15 @@ const World = (() => {
       : Math.min(T.SHADE_MAX, Math.round(T.SHADE_BASE + floorNum * T.SHADE_PER_FLOOR));
     for (let tries = 0; tries < 200 && shadeSpawns.length < count; tries++) {
       const x = 1 + (rand() * (W - 2) | 0), y = 1 + (rand() * (H - 2) | 0);
-      if (at(x, y) !== FLOOR) continue;
+      if (at(x, y) !== FLOOR || props.has(x + ',' + y)) continue;
       if (Math.hypot(x + 0.5 - entry.x, y + 0.5 - entry.y) < 7) continue;
       shadeSpawns.push({ x: x + 0.5, y: y + 0.5 });
     }
-    if (boss) shadeSpawns.push({ x: exit.x, y: exit.y + 1, boss: true });
+    if (boss) {
+      // ο φύλακας «συνθλίβει» ό,τι prop βρεθεί στο σημείο γέννησής του
+      props.delete((exit.x | 0) + ',' + ((exit.y + 1) | 0));
+      shadeSpawns.push({ x: exit.x, y: exit.y + 1, boss: true });
+    }
 
     // συνολικό scrap του ορόφου (για daily score fraction)
     let lootTotal = 0;

@@ -198,7 +198,7 @@ const Assets = (() => {
     }),
   };
 
-  A.ui = { titlebg: null, appicon: null };
+  A.ui = { titlebg: null };
 
   // ---------- PNG overrides ----------
   const OVERRIDES = [];
@@ -227,7 +227,6 @@ const Assets = (() => {
   for (const k of Object.keys(A.props)) reg(`prop_deeper_${k}`, img => { A.props[k] = img; });
   for (const k of Object.keys(A.icons)) reg(`icon_deeper_${k}`, img => { A.icons[k] = img; });
   reg('ui_deeper_titlebg', img => { A.ui.titlebg = img; });
-  reg('ui_deeper_appicon', img => { A.ui.appicon = img; });
 
   A.OVERRIDE_KEYS = OVERRIDES.map(o => o.key);
   A.loadOverrides = function (done) {

@@ -76,9 +76,10 @@
     pointer-events: none;
   }
 
+  /* toast: εκτός #hud ώστε να φαίνεται και σε hub/overlays */
   #toast {
-    position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
-    max-width: 86%;
+    position: fixed; top: 26%; left: 50%; transform: translateX(-50%);
+    max-width: 86%; z-index: 55;
     font-size: 19px; color: #fff; text-align: center;
     text-shadow: 1px 1px 0 #000, 0 0 12px rgba(0,0,0,0.7);
     opacity: 0; transition: opacity 0.25s;
@@ -259,6 +260,7 @@
 <body>
   <div id="game"><canvas id="screen" width="288" height="512"></canvas></div>
   <div id="scan"></div>
+  <div id="toast"></div>
 
   <!-- HUD -->
   <div id="hud" class="hidden">
@@ -269,7 +271,6 @@
     <div id="run-loot">⚙ 0</div>
     <button id="pause-btn" class="side-btn">II</button>
     <div id="hint"></div>
-    <div id="toast"></div>
 
     <div id="joy-zone"></div>
     <div id="joy-base" class="hidden"><div id="joy-stick"></div></div>

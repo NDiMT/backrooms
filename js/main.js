@@ -22,6 +22,22 @@
   // ---------- state ----------
   let state = 'TITLE';   // TITLE | HUB | PLAY | DEAD | DAILY_RESULT
   let panel = null;      // null | 'elev' | 'pause'
+  let adBreak = false;   // rewarded ad σε εξέλιξη → πάγωμα gameplay
+
+  /* Όλα τα rewarded ads περνούν από εδώ: παγώνει το update loop,
+     ειδοποιεί το portal SDK, και μπλοκάρει διπλό trigger. */
+  function adGate(placement, onReward) {
+    if (adBreak) return;
+    adBreak = true;
+    Monetize.gameplayStop();
+    const done = () => {
+      adBreak = false;
+      if (state === 'PLAY') Monetize.gameplayStart();
+    };
+    Monetize.showRewarded(placement,
+      () => { done(); onReward(); },
+      done);
+  }
 
   const game = {
     audio: GameAudio,
@@ -78,11 +94,23 @@
     return Math.round(upVal('damage') * (1 + S.cores * T.CORE_DMG_BONUS));
   }
   function greedMult() { return upVal('greed') * (1 + S.cores * T.CORE_SCRAP_BONUS); }
-  function lightRadius() {
-    return upVal('light') * (game.run && game.run.batteryT > 0 ? 1.6 : 1);
-  }
   function droneRatePerMin() {
     return upVal('drones') * T.droneDepthMult(S.deepest);
+  }
+
+  /* Snapshot των stats στο run — υπολογίζονται μία φορά ανά run (και σε
+     core pickup), όχι ανά frame/shade. Upgrades αγοράζονται μόνο στο hub. */
+  function recalcRunStats() {
+    const run = game.run;
+    run.spd = upVal('speed');
+    run.lightBase = upVal('light');
+    run.dmg = dmgStat();
+    run.greed = greedMult();
+  }
+  function lightRadius() {
+    const run = game.run;
+    if (!run) return 1.7;
+    return run.lightBase * (run.batteryT > 0 ? 1.6 : 1);
   }
 
   // ---------- ημερομηνίες daily ----------
@@ -140,14 +168,21 @@
   }
 
   function startRun(floor, daily) {
+    GameAudio.start();
     game.run = {
       floor, daily: !!daily,
       scrap: 0, keycard: false, batteryT: 0,
       bossAlive: false,
       seed: (Math.random() * 0xffffffff) >>> 0,
       timeLeft: daily ? T.DAILY_TIME : 0,
+      // daily ταυτότητα: κλειδώνεται στην ΕΚΚΙΝΗΣΗ ώστε ένα run που
+      // διασχίζει τα μεσάνυχτα UTC να χρεωθεί στη σωστή μέρα
+      dailyDate: daily ? todayStr() : '',
+      dailySeed: daily ? dailySeed() : 0,
+      dailyNum: daily ? dailyNumber() : 0,
     };
     game.player = freshPlayer();
+    recalcRunStats();
     S.stats.runs++;
     Monetize.track('run_start', { floor, daily: !!daily });
     loadFloor(floor);
@@ -163,9 +198,10 @@
     run.floor = f;
     run.keycard = false;
     const seed = run.daily
-      ? dailySeed()
+      ? run.dailySeed
       : ((run.seed ^ Math.imul(f, 2654435761)) >>> 0);
-    game.world = World.generate(f, seed);
+    game.world = World.generate(f, seed, { noBoss: run.daily });
+    if (!run.daily) S.deepest = Math.max(S.deepest, f);
     game.player.x = game.world.entry.x;
     game.player.y = game.world.entry.y;
     game.shades = game.world.shadeSpawns.map(s =>
@@ -201,8 +237,7 @@
     if (best) return { type: 'shade', shade: best };
 
     for (const [k, pr] of w.props) {
-      const [tx, ty] = k.split(',').map(Number);
-      if (Math.hypot(tx + 0.5 - p.x, ty + 0.5 - p.y) < 1.25) {
+      if (Math.hypot(pr.tx + 0.5 - p.x, pr.ty + 0.5 - p.y) < 1.25) {
         return { type: 'prop', key: k, prop: pr };
       }
     }
@@ -226,7 +261,7 @@
   }
 
   function act() {
-    if (state !== 'PLAY' || panel) return;
+    if (state !== 'PLAY' || panel || adBreak) return;
     const p = game.player;
     if (p.attackCd > 0) return;
     p.attackCd = T.PLAYER_ATK_CD;
@@ -234,15 +269,18 @@
 
     const tgt = findTarget();
     if (!tgt) { GameAudio.swing(); return; }
-    if (tgt.type === 'shade') { tgt.shade.hurt(dmgStat(), game); return; }
+    if (tgt.type === 'shade') { tgt.shade.hurt(game.run.dmg, game); return; }
     if (tgt.type === 'prop') { Entities.hitProp(game, tgt.key, tgt.prop); return; }
     if (tgt.type === 'vault') { openVault(); return; }
     if (tgt.type === 'exit') { tryExit(); return; }
   }
 
   function openVault() {
-    Monetize.showRewarded('vault', () => {
+    adGate('vault', () => {
+      const vd = game.world.vaultDoor;
       game.world.vaultOpen = true;
+      // η πόρτα γίνεται κανονικό πάτωμα και στο tile grid
+      game.world.tiles[vd.y * game.world.W + vd.x] = World.VAULT_FLOOR;
       GameAudio.vaultOpen();
       toast('The vault opens…', 2200);
       Monetize.track('vault_open', { floor: game.run.floor });
@@ -259,7 +297,6 @@
     }
     if (run.daily) { endDaily('exit'); return; }
     GameAudio.elevator();
-    S.deepest = Math.max(S.deepest, run.floor);
     SaveGame.save();
     renderElevPanel();
     openPanel('elev');
@@ -278,6 +315,7 @@
   }
 
   function goDeeper() {
+    if (game.run.daily) return;   // το daily είναι πάντα ένας όροφος
     closePanel();
     GameAudio.descend();
     S.stats.floors++;
@@ -285,12 +323,16 @@
     loadFloor(game.run.floor + 1);
   }
 
+  function bankScrap(gain) {
+    S.bank += gain;
+    S.stats.scrapTotal += gain;
+  }
+
   function cashOut(mult) {
     const run = game.run;
     const gain = Math.round(run.scrap * mult);
-    S.bank += gain;
+    bankScrap(gain);
     S.stats.floors++;
-    S.stats.scrapTotal += gain;
     GameAudio.cashout();
     Monetize.track('cashout', { floor: run.floor, scrap: gain, mult });
     SaveGame.save();
@@ -299,10 +341,21 @@
     toast('+' + gain + ' ⚙ banked', 2400);
   }
 
+  /* Εγκατάλειψη run (θάνατος χωρίς ad ή abandon απ' το pause):
+     τα drones περισώζουν ένα ποσοστό. */
+  function salvageRun(msg) {
+    const gain = Math.round(game.run.scrap * T.GIVEUP_KEEP);
+    bankScrap(gain);
+    Monetize.track('salvage', { floor: game.run.floor, scrap: gain });
+    SaveGame.save();
+    enterHub();
+    if (gain > 0) toast(msg.replace('%d', gain), 2600);
+  }
+
   $('elev-deeper').addEventListener('click', goDeeper);
   $('elev-cashout').addEventListener('click', () => cashOut(1));
   $('elev-cashout2').addEventListener('click', () => {
-    Monetize.showRewarded('cashout2x', () => cashOut(2));
+    adGate('cashout2x', () => cashOut(2));
   });
 
   // ---------- θάνατος ----------
@@ -317,7 +370,8 @@
   }
 
   $('revive-btn').addEventListener('click', () => {
-    Monetize.showRewarded('revive', () => {
+    GameAudio.start();
+    adGate('revive', () => {
       const p = game.player;
       p.hp = Math.round(p.maxHp * T.RESPAWN_HP_FRAC);
       p.x = game.world.entry.x;
@@ -327,12 +381,7 @@
     });
   });
   $('giveup-btn').addEventListener('click', () => {
-    const gain = Math.round(game.run.scrap * T.GIVEUP_KEEP);
-    S.bank += gain;
-    S.stats.scrapTotal += gain;
-    SaveGame.save();
-    enterHub();
-    if (gain > 0) toast('The drones salvage ' + gain + ' ⚙ from your body.', 2800);
+    salvageRun('The drones salvage %d ⚙ from your body.');
   });
 
   // ---------- daily ----------
@@ -344,28 +393,30 @@
   function endDaily(reason) {
     const run = game.run;
     const score = run.scrap;
-    S.bank += score;
-    S.stats.scrapTotal += score;
-    S.daily = { date: todayStr(), score };
+    bankScrap(score);
+    // χρεώνεται στη μέρα που ΞΕΚΙΝΗΣΕ το run (βλ. startRun)
+    S.daily = { date: run.dailyDate, score, num: run.dailyNum };
     SaveGame.save();
     const expected = Math.max(1,
-      game.world.lootTotal * (1 + T.DAILY_FLOOR * 0.13) * greedMult());
+      game.world.lootTotal * (1 + T.DAILY_FLOOR * 0.13) * run.greed);
     const frac = Math.min(1, score / expected);
     const squares = Math.max(score > 0 ? 1 : 0, Math.round(frac * 5));
-    const tail = reason === 'death' ? '💀' : reason === 'exit' ? '🚪' : '⏰';
+    const tail = reason === 'death' ? '💀' : reason === 'exit' ? '🚪'
+      : reason === 'abandon' ? '🏳' : '⏰';
     game.dailyGrid = '🟨'.repeat(squares) + '⬛'.repeat(5 - squares) + ' ' + tail;
     $('daily-grid').textContent = game.dailyGrid;
     $('daily-score-line').innerHTML =
       `<b>${score}</b> ⚙ banked` +
       (reason === 'death' ? '<br>The dark got you.' :
-       reason === 'exit' ? '<br>Clean exit!' : '<br>Time ran out.');
+       reason === 'exit' ? '<br>Clean exit!' :
+       reason === 'abandon' ? '<br>You walked away.' : '<br>Time ran out.');
     Monetize.track('daily_score', { score, reason });
     setState('DAILY_RESULT');
   }
 
   $('daily-close').addEventListener('click', enterHub);
   $('share-btn').addEventListener('click', () => {
-    const text = 'DEEPER Daily #' + dailyNumber() + '\n' +
+    const text = 'DEEPER Daily #' + (S.daily.num || dailyNumber()) + '\n' +
       game.dailyGrid + '\n' +
       S.daily.score + ' scrap — how deep can you go?';
     Monetize.track('share', {});
@@ -380,6 +431,7 @@
 
   // ---------- hub ----------
   let hubAcc = 0;   // κλασματικό υπόλοιπο ζωντανών drone εσόδων
+  let hubSaveT = 0, hubUiT = 0;
 
   function enterHub() {
     setState('HUB');
@@ -387,9 +439,13 @@
     SaveGame.save();
   }
 
-  function renderHub() {
+  function setHubBank() {
     $('hub-bank').innerHTML =
       `⚙ ${Math.floor(S.bank)} · <span class="core">◆ ${S.cores}</span>`;
+  }
+
+  function renderHub() {
+    setHubBank();
     const rate = droneRatePerMin();
     $('hub-sub').textContent =
       (S.deepest ? `Deepest: floor ${S.deepest}` : 'The elevator hums below.') +
@@ -449,9 +505,13 @@
       const whole = Math.floor(hubAcc);
       hubAcc -= whole;
       S.bank += whole;
-      $('hub-bank').innerHTML =
-        `⚙ ${Math.floor(S.bank)} · <span class="core">◆ ${S.cores}</span>`;
+      setHubBank();
     }
+    // περιοδικό save (τα idle κέρδη να μη χάνονται σε OOM-kill) και
+    // refresh της λίστας upgrades (κουμπιά που έγιναν αγοράσιμα)
+    hubSaveT += dt; hubUiT += dt;
+    if (hubSaveT > 15) { hubSaveT = 0; SaveGame.save(); }
+    if (hubUiT > 4) { hubUiT = 0; renderHub(); }
   }
 
   $('descend-btn').addEventListener('click', () => startRun(S.checkpoint, false));
@@ -473,8 +533,7 @@
     $('offline').classList.remove('hidden');
   }
   function claimOffline(mult) {
-    S.bank += offlinePending * mult;
-    S.stats.scrapTotal += offlinePending * mult;
+    bankScrap(offlinePending * mult);
     Monetize.track('offline_claim', { amt: offlinePending, mult });
     offlinePending = 0;
     $('offline').classList.add('hidden');
@@ -483,14 +542,13 @@
   }
   $('offline-claim').addEventListener('click', () => claimOffline(1));
   $('offline-claim2').addEventListener('click', () => {
-    Monetize.showRewarded('offline2x', () => claimOffline(2));
+    adGate('offline2x', () => claimOffline(2));
   });
 
   // ---------- hints ----------
-  function currentHint() {
+  function currentHint(tgt) {
     const run = game.run, w = game.world;
     if (run.daily) return 'Grab everything before the clock runs out!';
-    const tgt = findTarget();
     if (tgt && tgt.type === 'exit') return 'Tap ACT to use the elevator';
     if (w.boss && run.bossAlive) return 'Defeat the guardian to unlock the elevator';
     if (w.locked && !run.keycard) return 'The exit is LOCKED — find the keycard';
@@ -512,17 +570,19 @@
   });
   document.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  $('act-btn').addEventListener('pointerdown', e => { e.preventDefault(); act(); });
+  $('act-btn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    GameAudio.start();   // resume σε suspended context (iOS/WebView)
+    act();
+  });
   $('pause-btn').addEventListener('click', () => openPanel('pause'));
   $('resume-btn').addEventListener('click', closePanel);
   $('abandon-btn').addEventListener('click', () => {
-    const gain = Math.round(game.run.scrap * T.GIVEUP_KEEP);
-    S.bank += gain;
-    S.stats.scrapTotal += gain;
-    SaveGame.save();
     closePanel();
-    enterHub();
-    if (gain > 0) toast('+' + gain + ' ⚙ salvaged', 2000);
+    // στο daily η εγκατάλειψη ΚΑΤΑΝΑΛΩΝΕΙ την ημερήσια προσπάθεια —
+    // αλλιώς το γνωστό layout γίνεται farm
+    if (game.run.daily) { endDaily('abandon'); return; }
+    salvageRun('+%d ⚙ salvaged');
   });
   $('enter-btn').addEventListener('click', () => {
     GameAudio.start();
@@ -541,15 +601,18 @@
   // ---------- συλλογή pickups ----------
   function collectNear() {
     const p = game.player, run = game.run;
+    let removed = false;
     for (const d of game.pickups) {
       if (d.taken) continue;
       if (Math.hypot(d.x - p.x, d.y - p.y) > 0.7) continue;
       d.taken = true;
+      removed = true;
       if (d.kind === 'scrap') {
-        run.scrap += Math.max(1, Math.round(d.n * greedMult()));
+        run.scrap += Math.max(1, Math.round(d.n * run.greed));
         GameAudio.scrap();
       } else if (d.kind === 'core') {
         S.cores++;
+        recalcRunStats();
         GameAudio.core();
         toast('◆ CORE! Permanent +10% scrap, +5% damage', 3000);
         SaveGame.save();
@@ -567,7 +630,7 @@
         toast('🔋 Flashlight boosted!', 1800);
       }
     }
-    game.pickups = game.pickups.filter(d => !d.taken);
+    if (removed) game.pickups = game.pickups.filter(d => !d.taken);
   }
 
   // ---------- update ----------
@@ -599,7 +662,7 @@
       p.moving = len > 0.08;
       if (p.moving) {
         mx /= Math.max(1, len); my /= Math.max(1, len);
-        const sp = upVal('speed');
+        const sp = run.spd;
         World.move(game.world, p, mx * sp * dt, my * sp * dt, 0.28);
         p.animT += dt * 7;
         if (Math.abs(mx) > Math.abs(my)) { p.dir = 'east'; p.faceLeft = mx < 0; }
@@ -610,8 +673,9 @@
 
     // shades / fx
     for (const m of game.shades) m.update(dt, game);
-    for (const f of game.fx) f.t += dt;
-    game.fx = game.fx.filter(f => f.t < 0.5);
+    let fxDead = false;
+    for (const f of game.fx) { f.t += dt; if (f.t >= 0.5) fxDead = true; }
+    if (fxDead) game.fx = game.fx.filter(f => f.t < 0.5);
 
     // ηχητικό cue όταν πλησιάζει shade στο σκοτάδι
     shadeCueT -= dt;
@@ -630,16 +694,27 @@
     const biome = Defs.biomeFor(run.floor);
     GameAudio.setDark(Math.min(0.85, biome.dark));
 
-    // HUD
-    $('hp-fill').style.width = Math.max(0, p.hp / p.maxHp * 100) + '%';
-    $('floor-label').textContent = run.daily
+    // HUD — γράφουμε στο DOM μόνο όταν η τιμή αλλάζει
+    const tgt = findTarget();
+    setDom('hp-fill', Math.max(0, p.hp / p.maxHp * 100) + '%', 'width');
+    setDom('floor-label', run.daily
       ? 'DAILY · ' + Math.ceil(run.timeLeft) + 's'
-      : 'FLOOR ' + run.floor + ' · ' + biome.name;
-    $('run-loot').innerHTML = '⚙ ' + run.scrap +
+      : 'FLOOR ' + run.floor + ' · ' + biome.name);
+    setDom('run-loot', '⚙ ' + run.scrap +
       (S.cores ? ' <span class="core">◆ ' + S.cores + '</span>' : '') +
-      (run.keycard ? ' 🔑' : '');
-    $('hint').textContent = currentHint();
-    $('act-icon').textContent = actIconFor(findTarget());
+      (run.keycard ? ' 🔑' : ''), 'html');
+    setDom('hint', currentHint(tgt));
+    setDom('act-icon', actIconFor(tgt));
+  }
+
+  const domLast = {};
+  function setDom(id, v, mode) {
+    if (domLast[id] === v) return;
+    domLast[id] = v;
+    const el = $(id);
+    if (mode === 'width') el.style.width = v;
+    else if (mode === 'html') el.innerHTML = v;
+    else el.textContent = v;
   }
 
   // ---------- render ----------
@@ -688,8 +763,8 @@
 
     // depth-sorted: props + shades + player
     const order = [];
-    for (const [k, pr] of game.world.props) {
-      const [tx, ty] = k.split(',').map(Number);
+    for (const [, pr] of game.world.props) {
+      const tx = pr.tx, ty = pr.ty;
       order.push({ y: ty + 0.5, draw: () => {
         const img = Assets.props[pr.kind];
         const s = scr(tx + 0.5, ty + 0.9, cam);
@@ -793,7 +868,7 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (state === 'PLAY') {
-      if (!panel) update(dt);
+      if (!panel && !adBreak) update(dt);
       if (state === 'PLAY') render(dt);
     } else if (state === 'HUB') {
       hubIdleTick(dt);
@@ -801,9 +876,15 @@
   }
   requestAnimationFrame(loop);
 
-  // αποθήκευση όταν κρύβεται η σελίδα (και lastSeen για offline drones)
+  // αποθήκευση όταν κρύβεται η σελίδα (και lastSeen για offline drones)·
+  // στην επιστροφή: resume ήχου + offline earnings χωρίς restart του app
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) SaveGame.save();
+    if (document.hidden) { SaveGame.save(); return; }
+    GameAudio.resume();
+    if (state === 'HUB') {
+      offlinePending = offlineEarnings();
+      if (offlinePending > 0) { renderHub(); maybeShowOffline(); }
+    }
   });
 
   // ---------- boot ----------
@@ -820,6 +901,7 @@
     game, World, Defs, Entities, SaveGame, Monetize, S,
     get state() { return state; },
     get panel() { return panel; },
+    get adBreak() { return adBreak; },
     setState, startRun, startDaily, endDaily, act, openPanel, closePanel,
     goDeeper, cashOut, die, enterHub, findTarget, tryExit, loadFloor,
     upVal, dmgStat, greedMult, offlineEarnings,
