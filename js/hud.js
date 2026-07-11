@@ -11,6 +11,50 @@ const HUD = (() => {
   function notifyPain() { painT = 0.6; }
   function hitmarker() { hitT = 0.12; }
 
+  /* Αριθμοί ζημιάς: ανεβαίνουν από το σταυρόνημα. */
+  const floaters = [];
+  function addDamage(n, element) {
+    if (floaters.length > 10) floaters.shift();
+    floaters.push({
+      n, t: 0,
+      x: (Math.random() - 0.5) * 26,
+      color: element ? PlayerSys.ELEMENTS[element].color : '#ffe8c0',
+    });
+  }
+
+  function renderFloaters(ctx, dt) {
+    for (const f of floaters) {
+      f.t += dt;
+      const a = 1 - f.t / 0.6;
+      if (a <= 0) continue;
+      ctx.globalAlpha = Math.max(0, a);
+      doomText(ctx, String(f.n), W / 2 + 14 + f.x,
+        VH / 2 - 14 - f.t * 38, 8, f.color);
+      ctx.globalAlpha = 1;
+    }
+    for (let i = floaters.length - 1; i >= 0; i--) {
+      if (floaters[i].t > 0.6) floaters.splice(i, 1);
+    }
+  }
+
+  /* Μπάρα ζωής boss στο πάνω μέρος. */
+  function bossBar(ctx, game) {
+    if (game.deckIdx !== 3) return;
+    const boss = game.enemies.find(e => e.stats.boss && e.state !== 'dead');
+    if (!boss) return;
+    const w = 160, x0 = W / 2 - w / 2, y0 = 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x0 - 2, y0 - 2, w + 4, 9);
+    ctx.fillStyle = '#2a1030';
+    ctx.fillRect(x0, y0, w, 5);
+    ctx.fillStyle = boss.hp < boss.maxHp * 0.4 ? '#ff3050' : '#b040ff';
+    ctx.fillRect(x0, y0, Math.max(0, boss.hp / boss.maxHp) * w, 5);
+    ctx.font = '10px VT323, monospace';
+    ctx.fillStyle = '#d0a0ff';
+    ctx.textBaseline = 'top';
+    ctx.fillText('ORION', x0, y0 - 10);
+  }
+
   function face(p, dt) {
     grinT = Math.max(0, grinT - dt);
     painT = Math.max(0, painT - dt);
@@ -158,6 +202,21 @@ const HUD = (() => {
       ctx.fillText('EXIT↑', W - 34, VH + 16);
     }
 
+    // ---- χειροβομβίδες + dash (πάνω από το statusbar, αριστερά) ----
+    const nadeImg = Assets.pickups.nade;
+    ctx.drawImage(nadeImg, 6, VH - 28, 12, 12);
+    doomText(ctx, '×' + p.nades, 21, VH - 26, 7, '#c8e8a0');
+    const cdMax = 2.4 * (p.perks.dashCdMul || 1);
+    const frac = 1 - Math.min(1, p.dashCd / cdMax);
+    ctx.font = '10px VT323, monospace';
+    ctx.fillStyle = frac >= 1 ? '#67d080' : '#7c828e';
+    ctx.fillText('DASH', 6, VH - 13);
+    bar(ctx, 32, VH - 10, 26, frac, 1, frac >= 1 ? '#67d080' : '#c0a030');
+
+    // ---- damage numbers + boss bar ----
+    renderFloaters(ctx, dt);
+    bossBar(ctx, game);
+
     // ---- minimap (toggle) ----
     if (game.showMap) minimap(ctx, game);
   }
@@ -198,5 +257,5 @@ const HUD = (() => {
     ctx.drawImage(img, x, y);
   }
 
-  return { render, weapon, notifyPickup, notifyPain, hitmarker, BAR_H };
+  return { render, weapon, notifyPickup, notifyPain, hitmarker, addDamage, BAR_H };
 })();

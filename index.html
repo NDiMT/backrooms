@@ -226,7 +226,7 @@
     touch-action: none; pointer-events: auto;
   }
   #fire-btn.active { background: rgba(208, 48, 48, 0.45); color: #fff; }
-  #wpn-btn, #map-btn {
+  #wpn-btn, #map-btn, #dash-btn, #nade-btn {
     position: absolute; right: 136px; bottom: 44px;
     width: 58px; height: 58px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -237,6 +237,18 @@
     touch-action: none; pointer-events: auto;
   }
   #map-btn { right: 28px; bottom: 142px; width: 48px; height: 48px; }
+  #dash-btn {
+    left: 158px; right: auto; bottom: 38px; width: 54px; height: 54px;
+    color: #67d080; border-color: rgba(103, 208, 128, 0.4);
+    background: rgba(103, 208, 128, 0.08);
+  }
+  #nade-btn {
+    right: 136px; bottom: 118px; width: 48px; height: 48px;
+    color: #c8e8a0; border-color: rgba(200, 232, 160, 0.35);
+    background: rgba(200, 232, 160, 0.06);
+  }
+
+  button.danger { color: #ff5040 !important; }
 
   #pause-btn {
     position: absolute; left: 50%; transform: translateX(-50%); top: 6px;
@@ -293,13 +305,16 @@
       The clone printer still works. Descend 4 decks. Shut ORION down.
     </p>
     <div class="controls-hint" id="hint-desktop">
-      WASD move · MOUSE aim · CLICK fire · 1-3/Q weapons · E terminal · TAB map
+      WASD move · MOUSE aim · CLICK fire · SHIFT dash · G grenade ·
+      1-3/Q weapons · E terminal · TAB map
     </div>
     <div class="controls-hint hidden" id="hint-touch">
-      Left joystick to move · drag right side to aim · hold FIRE for bursts
+      Left joystick to move · drag right side to aim · hold FIRE ·
+      DASH to dodge · GRN for grenades
     </div>
     <button class="primary" id="start-btn">PRINT NEW CLONE</button>
     <button id="meta-btn">CLONE MEMORIES (UPGRADES)</button>
+    <button id="diff-btn">DIFFICULTY: NORMAL</button>
   </div>
 
   <!-- PAUSE -->

@@ -20,6 +20,24 @@ const Entities = (() => {
     boss:     { hp: 650, speed: 1.0, dmg: 12, range: 12, ranged: true,
                 proj: 'acid', projSpeed: 6.5, cooldown: 1.5,
                 worldH: 1.0, radius: 0.55, scrap: 0, boss: true },
+    // v3: νέοι εχθροί + βαρέλι
+    boomer:   { hp: 40, speed: 2.6, dmg: 34, range: 1.2, ranged: false,
+                cooldown: 99, worldH: 0.8, radius: 0.34, scrap: 10,
+                exploder: true },
+    sentry:   { hp: 55, speed: 0, dmg: 6, range: 9, ranged: true,
+                proj: 'bolt', projSpeed: 9, burst: 4, cooldown: 2.4,
+                worldH: 0.5, radius: 0.3, fly: 0.25, scrap: 14,
+                stationary: true },
+    barrel:   { hp: 10, speed: 0, dmg: 0, range: 0, ranged: false,
+                cooldown: 99, worldH: 0.55, radius: 0.28, scrap: 0,
+                barrel: true },
+  };
+
+  /* Elite modifiers: τυχαία ενίσχυση με μόνιμη χρωματική aura. */
+  const ELITES = {
+    swift:      { name: 'SWIFT', aura: '#ffd040', speed: 1.6 },
+    juggernaut: { name: 'JUGGERNAUT', aura: '#ff6050', hp: 2.2 },
+    leech:      { name: 'LEECH', aura: '#c050ff', regen: 4 },
   };
 
   class Enemy {
@@ -28,6 +46,7 @@ const Entities = (() => {
       this.stats = STATS[type];
       this.x = x; this.y = y;
       this.hp = this.stats.hp;
+      this.maxHp = this.hp;
       this.state = 'idle';          // idle|chase|attack|pain|dying|dead
       this.animT = 0;
       this.cool = Math.random() * 0.8;
@@ -42,6 +61,18 @@ const Entities = (() => {
       this.shockT = 0;
       this.cryoT = 0;
       this.statusFx = null; // χρώμα flash για το render
+      this.elite = null;    // elite modifier (aura χρώμα στο render)
+      this.exploded = false;
+    }
+
+    makeElite(kind) {
+      const mod = ELITES[kind];
+      if (!mod) return this;
+      this.elite = mod;
+      if (mod.hp) { this.hp *= mod.hp; this.maxHp = this.hp; }
+      if (mod.speed) this.speedMul = mod.speed;
+      this.scrapMul = 2.5;
+      return this;
     }
 
     /* Εφαρμογή elemental status από χτύπημα. */
@@ -71,7 +102,13 @@ const Entities = (() => {
           (this.deadT / 0.5 * death.length) | 0)];
       }
       if (this.state === 'pain') return set.pain;
-      if (this.state === 'attack' && this.animT < 0.35) return set.attack;
+      if (this.state === 'attack' && this.animT < 0.35) {
+        const a = set.attack;
+        if (Array.isArray(a)) {
+          return a[Math.min(a.length - 1, (this.animT / 0.35 * a.length) | 0)];
+        }
+        return a;
+      }
       return set.walk[((tick * 5) | 0) % set.walk.length];
     }
 
@@ -83,6 +120,11 @@ const Entities = (() => {
       if (this.hp <= 0) {
         this.state = 'dying';
         this.deadT = 0;
+        // βαρέλια/boomers σκάνε στον θάνατο (αλυσιδωτές εκρήξεις)
+        if ((this.stats.barrel || this.stats.exploder) && !this.exploded) {
+          this.exploded = true;
+          game.explodeAt(this.x, this.y, this.stats.barrel ? 45 : 30, 2.2, this);
+        }
         game.audio.enemyDie(this.type);
         game.onEnemyDeath(this);
         return true;
@@ -106,6 +148,12 @@ const Entities = (() => {
         this.deadT += dt;
         if (this.deadT > 0.5) this.state = 'dead';
         return;
+      }
+      if (this.stats.barrel) return;   // τα βαρέλια απλώς στέκονται
+
+      // leech elites αναγεννούν
+      if (this.elite && this.elite.regen) {
+        this.hp = Math.min(this.maxHp, this.hp + this.elite.regen * dt);
       }
 
       // ---- elemental effects ----
@@ -158,6 +206,12 @@ const Entities = (() => {
         return;
       }
 
+      // boomer: αυτοκτονική έκρηξη μόλις φτάσει κοντά
+      if (st.exploder && dist < st.range) {
+        this.hurt(this.hp + 999, game);
+        return;
+      }
+
       // επίθεση;
       if (st.ranged) {
         if (sees && dist < st.range && this.cool <= 0) {
@@ -200,14 +254,18 @@ const Entities = (() => {
           const n = Math.hypot(mx, my);
           mx /= n; my /= n;
         }
-        let sp = st.speed * (sees ? 1 : 0.5);
+        let sp = st.speed * (sees ? 1 : 0.5) * (this.speedMul || 1);
         if (this.cryoT > 0) sp *= 0.55; // παγωμένος
         const blocked = Procgen.move(game.world, this, mx * sp * dt, my * sp * dt, st.radius);
         if (blocked && !sees) this.state = 'idle';
       }
 
-      // ο boss «εξαγριώνεται» κάτω από 40% HP
+      // ο boss «εξαγριώνεται» κάτω από 40% HP και καλεί adds στο 50%
       if (st.boss && this.hp < st.hp * 0.4) this.cool = Math.min(this.cool, 0.8);
+      if (st.boss && !this.addsSpawned && this.hp < st.hp * 0.5) {
+        this.addsSpawned = true;
+        game.spawnBossAdds(this);
+      }
     }
 
     fireAt(game, p) {
@@ -250,7 +308,11 @@ const Entities = (() => {
     update(dt, game) {
       if (this.dead) return;
       this.life -= dt;
-      if (this.life <= 0) { this.dead = true; return; }
+      if (this.life <= 0) {
+        if (this.explodeOnTimeout) this.explode(game);
+        else this.dead = true;
+        return;
+      }
       const nx = this.x + this.dx * dt;
       const ny = this.y + this.dy * dt;
       if (Procgen.blocked(game.world, nx, ny, 0.12)) {
@@ -306,6 +368,7 @@ const Entities = (() => {
     cells:  { worldH: 0.18, msg: '+20 energy cells' },
     scrap:  { worldH: 0.16, msg: null },
     core:   { worldH: 0.24, msg: '+1 memory core' },
+    nade:   { worldH: 0.2, msg: '+2 grenades' },
     weapon: { worldH: 0.28, msg: null }, // .inst καθορίζει το όπλο
   };
 

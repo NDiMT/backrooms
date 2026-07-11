@@ -884,6 +884,53 @@ const Assets = (() => {
       pain: painFrame(boss1),
       death: deathFrames(boss1, 'rgba(140,60,220,0.9)'),
     };
+    // νέοι εχθροί — procedural fallback: recolors μέχρι να φορτώσουν τα PNG
+    const boomer1 = tint(A.enemies.shambler.walk[0], '#ff8020', 0.4);
+    A.enemies.boomer = {
+      walk: [boomer1, tint(A.enemies.shambler.walk[1], '#ff8020', 0.4)],
+      attack: tint(boomer1, '#ffb040', 0.5),
+      pain: painFrame(boomer1),
+      death: deathFrames(boomer1, 'rgba(255,120,20,0.9)'),
+    };
+    const sentry1 = tint(drone1, '#d04040', 0.35);
+    A.enemies.sentry = {
+      walk: [sentry1, tint(drone2, '#d04040', 0.35)],
+      attack: tint(sentry1, '#ff5050', 0.45),
+      pain: painFrame(sentry1),
+      death: deathFrames(sentry1, 'rgba(80,40,40,0.9)'),
+    };
+
+    // εκρηκτικό βαρέλι (fallback: ζωγραφιστό) — συμμετέχει ως "enemy" set
+    const barrel = (() => {
+      const c = document.createElement('canvas');
+      c.width = 24; c.height = 32;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#8c2018'; ctx.fillRect(3, 4, 18, 26);
+      ctx.fillStyle = '#a83028'; ctx.fillRect(5, 4, 6, 26);
+      ctx.fillStyle = '#e0b020'; ctx.fillRect(3, 10, 18, 3);
+      ctx.fillStyle = '#181410'; ctx.fillRect(3, 20, 18, 2);
+      ctx.fillStyle = '#301008'; ctx.fillRect(3, 4, 18, 2);
+      ctx.fillRect(3, 28, 18, 2);
+      return c;
+    })();
+    A.enemies.barrel = {
+      walk: [barrel],
+      attack: barrel,
+      pain: barrel,
+      death: deathFrames(barrel, 'rgba(255,140,30,0.95)'),
+    };
+
+    // χειροβομβίδα (fallback)
+    const nade = (() => {
+      const c = document.createElement('canvas');
+      c.width = 16; c.height = 16;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#3a4430'; ctx.beginPath();
+      ctx.arc(8, 9, 5.5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#88c060'; ctx.fillRect(4, 8, 8, 2);
+      ctx.fillStyle = '#888c94'; ctx.fillRect(6, 2, 4, 3);
+      return c;
+    })();
 
     A.pickups = {
       medkit: px(medkitMap, pickPal, 3),
@@ -891,6 +938,7 @@ const Assets = (() => {
       cells: px(cellsMap, pickPal, 3),
       scrap: px(scrapMap, pickPal, 3),
       core: px(coreMap, pickPal, 3),
+      nade,
     };
     A.props = {
       terminal: px(termMap, termPal, 4),
@@ -983,13 +1031,16 @@ const Assets = (() => {
     shambler: 'rgba(140,20,20,0.9)', spitter: 'rgba(140,140,20,0.9)',
     drone: 'rgba(40,40,50,0.9)', heavy: 'rgba(80,80,90,0.9)',
     warden: 'rgba(180,100,20,0.9)', boss: 'rgba(140,60,220,0.9)',
+    boomer: 'rgba(255,120,20,0.9)', sentry: 'rgba(80,40,40,0.9)',
   };
 
   for (const [name, e] of Object.entries(A.enemies)) {
-    // slots για walk cycle (έως 4 frames) και death animation (έως 4 frames)·
+    if (name === 'barrel') continue; // δικό του override παρακάτω
+    // slots για walk/death/attack animations (έως 4 frames το καθένα)·
     // τα αρχεία φορτώνουν async, οπότε ξαναχτίζουμε τα arrays σε κάθε άφιξη
     const walkSlots = [null, null, null, null];
     const dieSlots = [null, null, null, null];
+    const attackSlots = [null, null, null, null];
     const rebuildWalk = () => {
       const frames = walkSlots.filter(Boolean);
       if (frames.length) e.walk = frames;
@@ -998,23 +1049,43 @@ const Assets = (() => {
       const frames = dieSlots.filter(Boolean);
       if (frames.length) e.death = frames;
     };
+    const rebuildAttack = () => {
+      const frames = attackSlots.filter(Boolean);
+      if (frames.length) e.attack = frames;
+    };
     for (let n = 1; n <= 4; n++) {
       reg(`enemy_${name}_walk${n}`, img => {
         walkSlots[n - 1] = img;
         rebuildWalk();
         if (n === 1) {
-          // παράγωγα από το βασικό frame (αν δεν έρθουν die frames)
+          // παράγωγα από το βασικό frame — έτσι pain/attack είναι πάντα
+          // ο ΙΔΙΟΣ χαρακτήρας με το walk (αν δεν έρθουν δικά τους frames)
           e.pain = painFrame(img);
           if (!dieSlots.some(Boolean)) e.death = deathFrames(img, BLOOD[name]);
+          if (!attackSlots.some(Boolean)) e.attack = tint(img, '#ffe0a0', 0.35);
         }
       });
       reg(`enemy_${name}_die${n}`, img => {
         dieSlots[n - 1] = img;
         rebuildDeath();
       });
+      reg(`enemy_${name}_attack${n}`, img => {
+        attackSlots[n - 1] = img;
+        rebuildAttack();
+      });
     }
-    reg(`enemy_${name}_attack`, img => { e.attack = img; });
+    reg(`enemy_${name}_attack`, img => {
+      if (!attackSlots.some(Boolean)) e.attack = img;
+    });
   }
+  reg('prop_barrel', img => {
+    const b = A.enemies.barrel;
+    b.walk = [img];
+    b.attack = img;
+    b.pain = img;
+    b.death = deathFrames(img, 'rgba(255,140,30,0.95)');
+  });
+  reg('pickup_nade', img => { A.pickups.nade = img; });
   for (const key of Object.keys(A.tex)) {
     reg(`tex_${key}`, img => {
       A.tex[key] = img;

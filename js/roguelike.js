@@ -28,6 +28,14 @@ const Rogue = (() => {
       apply: p => { p.armor = Math.min(100, p.armor + 50); } },
     { id: 'ammo', name: 'DEEP POCKETS', desc: '+30 rounds, +30 cells',
       apply: p => { p.ammo.rounds += 30; p.ammo.cells += 30; } },
+    { id: 'adrenal', name: 'ADRENAL VALVE', desc: '-35% dash cooldown',
+      apply: p => { p.perks.dashCdMul *= 0.65; } },
+    { id: 'demo', name: 'DEMOLITIONIST', desc: '+40% explosion damage, +2 grenade cap',
+      apply: p => { p.perks.explMul *= 1.4; p.perks.nadeCap += 2; p.nades += 2; } },
+    { id: 'skin', name: 'DERMAL WEAVE', desc: '-15% damage taken',
+      apply: p => { p.perks.dmgTakenMul *= 0.85; } },
+    { id: 'nades', name: 'FRAG SATCHEL', desc: '+3 grenades now',
+      apply: p => { p.nades = Math.min(p.perks.nadeCap, p.nades + 3); } },
   ];
 
   // ---------- τυχαίο όπλο (element/rarity κλιμακώνουν με το βάθος) ----------
@@ -78,6 +86,9 @@ const Rogue = (() => {
       { id: 'cells', name: 'CELLS x25', desc: 'energy ammunition', cost: 25,
         can: () => true,
         apply: () => { p.ammo.cells += 25; } },
+      { id: 'nades', name: 'GRENADES x2', desc: 'frag grenades (G)', cost: 25,
+        can: () => p.nades < p.perks.nadeCap,
+        apply: () => { p.nades = Math.min(p.perks.nadeCap, p.nades + 2); } },
       { id: 'crate', name: 'WEAPON CRATE', desc: 'random weapon drop', cost: 90,
         can: () => true,
         apply: () => {
@@ -126,6 +137,8 @@ const Rogue = (() => {
       max: 1, cost: () => 6 },
     { id: 'armor', name: 'CLONE PLATING', desc: 'start with 50 armor',
       max: 1, cost: () => 5 },
+    { id: 'nades', name: 'FRAG WEBBING', desc: '+1 starting grenade & capacity / level',
+      max: 2, cost: lvl => 3 + lvl * 2 },
   ];
 
   function loadMeta() {

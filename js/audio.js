@@ -76,6 +76,65 @@ const GameAudio = (() => {
     src.start(t);
   }
 
+  /* ---------- μουσική: σκοτεινό synth loop ανά deck ----------
+     Αργό arpeggio σε minor συγχορδία + υπόκωφο pad. Καθαρό WebAudio,
+     προγραμματισμένο σε βήματα — σταματά/ξεκινά με το state. */
+  let musicNodes = null, musicTimer = null, musicDeck = -1;
+
+  const MUSIC_ROOTS = [55, 49, 58.27, 46.25]; // A1, G1, A#1, F#1 ανά deck
+
+  function musicStart(deckIdx) {
+    if (!started) return;
+    if (musicNodes && musicDeck === deckIdx) return;
+    musicStop();
+    musicDeck = deckIdx;
+    const root = MUSIC_ROOTS[deckIdx] || 55;
+
+    const bus = ctx.createGain();
+    bus.gain.value = 0.0;
+    bus.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 2);
+    bus.connect(master);
+
+    // pad: δύο αποσυντονισμένα saw σε χαμηλό lowpass
+    const p1 = ctx.createOscillator(); p1.type = 'sawtooth'; p1.frequency.value = root;
+    const p2 = ctx.createOscillator(); p2.type = 'sawtooth'; p2.frequency.value = root * 1.007;
+    const pf = ctx.createBiquadFilter(); pf.type = 'lowpass'; pf.frequency.value = 220;
+    const pg = ctx.createGain(); pg.gain.value = 0.5;
+    p1.connect(pf); p2.connect(pf); pf.connect(pg); pg.connect(bus);
+    p1.start(); p2.start();
+
+    // αργό arpeggio (minor): root, +3, +7, +12 ημιτόνια
+    const steps = [0, 3, 7, 12, 7, 3];
+    let i = 0;
+    musicTimer = setInterval(() => {
+      if (!musicNodes) return;
+      const f = root * 4 * Math.pow(2, steps[i % steps.length] / 12);
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0.045, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+      o.connect(g); g.connect(bus);
+      o.start(t); o.stop(t + 1.7);
+      i++;
+    }, 1200);
+
+    musicNodes = { bus, oscs: [p1, p2] };
+  }
+
+  function musicStop() {
+    if (!musicNodes) return;
+    const { bus, oscs } = musicNodes;
+    musicNodes = null;
+    musicDeck = -1;
+    clearInterval(musicTimer);
+    bus.gain.cancelScheduledValues(ctx.currentTime);
+    bus.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+    setTimeout(() => { oscs.forEach(o => o.stop()); bus.disconnect(); }, 900);
+  }
+
   /* Ρεαλιστικός πυροβολισμός: click + kick + crack + body + tail. */
   function gunshot(o) {
     if (!started) return;
@@ -188,6 +247,10 @@ const GameAudio = (() => {
     elevator() { if (started) { osc('sine', 200, 500, 0.9, 0.14); noise('bandpass', 800, 1, 0.6, 0.1); } },
     uiClick() { if (started) noise('highpass', 3200, 2, 0.025, 0.08); },
     perk() { if (started) { osc('sine', 500, 1000, 0.5, 0.14); osc('sine', 750, 1500, 0.5, 0.08, 0.06); } },
+    dash() { if (started) { noise('bandpass', 1400, 1.2, 0.18, 0.16, 0, 500); osc('sine', 300, 90, 0.14, 0.1); } },
+    nadeThrow() { if (started) { noise('bandpass', 900, 1.5, 0.1, 0.1, 0, 400); osc('sine', 400, 250, 0.08, 0.06); } },
+    musicStart,
+    musicStop,
     win() {
       if (!started) return;
       [523, 659, 784, 1046].forEach((f, i) => {

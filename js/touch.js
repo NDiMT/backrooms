@@ -12,11 +12,11 @@ const TouchControls = (() => {
     firing: false,
   };
 
-  let root, joyBase, joyStick, fireBtn, wpnBtn, mapBtn;
+  let root, joyBase, joyStick, fireBtn, wpnBtn, mapBtn, dashBtn, nadeBtn;
   let joyTouchId = null, joyCenter = { x: 0, y: 0 };
   let lookTouchId = null, lookLastX = 0;
   const JOY_RADIUS = 52;
-  let onWeaponSwitch = null, onMapToggle = null;
+  let onWeaponSwitch = null, onMapToggle = null, onDash = null, onNade = null;
 
   function build() {
     document.body.classList.add('touch-mode');
@@ -28,6 +28,8 @@ const TouchControls = (() => {
       <div id="fire-btn">FIRE</div>
       <div id="wpn-btn">WPN</div>
       <div id="map-btn">MAP</div>
+      <div id="dash-btn">DASH</div>
+      <div id="nade-btn">GRN</div>
     `;
     document.body.appendChild(root);
     joyBase = document.getElementById('joy-base');
@@ -35,6 +37,8 @@ const TouchControls = (() => {
     fireBtn = document.getElementById('fire-btn');
     wpnBtn = document.getElementById('wpn-btn');
     mapBtn = document.getElementById('map-btn');
+    dashBtn = document.getElementById('dash-btn');
+    nadeBtn = document.getElementById('nade-btn');
 
     const lookPad = document.getElementById('game');
     lookPad.addEventListener('touchstart', onLookStart, { passive: false });
@@ -63,6 +67,14 @@ const TouchControls = (() => {
     mapBtn.addEventListener('touchstart', e => {
       e.preventDefault();
       if (onMapToggle) onMapToggle();
+    }, { passive: false });
+    dashBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (onDash) onDash();
+    }, { passive: false });
+    nadeBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (onNade) onNade();
     }, { passive: false });
   }
 
@@ -146,5 +158,7 @@ const TouchControls = (() => {
     get isTouch() { return isTouch; },
     set onWeaponSwitch(fn) { onWeaponSwitch = fn; },
     set onMapToggle(fn) { onMapToggle = fn; },
+    set onDash(fn) { onDash = fn; },
+    set onNade(fn) { onNade = fn; },
   };
 })();

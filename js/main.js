@@ -47,11 +47,14 @@
     seed: 0,
     kills: 0,
     scrapEarned: 0,
+    dmgDealt: 0,
     elapsed: 0,
     wardenDead: false,
     showMap: false,
     shakeT: 0,
     vampHeal: 0,
+    lastMoveX: 0,
+    lastMoveY: 0,
 
     shake(t) { this.shakeT = Math.max(this.shakeT, t); },
 
@@ -62,23 +65,65 @@
       }
     },
 
-    registerHit(e, dmg) {
+    registerHit(e, dmg, element) {
       e.hurt(dmg, this);
+      this.dmgDealt += dmg;
       GameAudio.hitMarker();
       HUD.hitmarker();
+      HUD.addDamage(Math.round(dmg), element);
+    },
+
+    /* Έκρηξη περιοχής (βαρέλια, boomers, χειροβομβίδες μέσω splash). */
+    explodeAt(x, y, dmg, r, source) {
+      GameAudio.explosion();
+      this.shake(0.45);
+      for (const e of this.enemies) {
+        if (!e.alive() || e === source) continue;
+        const d = Math.hypot(e.x - x, e.y - y);
+        if (d < r) {
+          const dealt = dmg * Math.max(0.35, 1 - d / r);
+          this.dmgDealt += dealt;
+          e.hurt(dealt, this);
+        }
+      }
+      const p = this.player;
+      const pd = Math.hypot(p.x - x, p.y - y);
+      if (pd < r * 0.9) {
+        this.hurtPlayer(dmg * 0.5 * Math.max(0.3, 1 - pd / r), source);
+      }
+    },
+
+    /* Ο boss καλεί ενισχύσεις στο 50% HP. */
+    spawnBossAdds(b) {
+      for (const t of ['drone', 'drone', 'boomer']) {
+        let x = b.x, y = b.y;   // fallback: πάνω στον boss
+        for (let tries = 0; tries < 14; tries++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 1.0 + tries * 0.25;
+          const tx = b.x + Math.cos(a) * r, ty = b.y + Math.sin(a) * r;
+          if (!Procgen.blocked(this.world, tx, ty, 0.32)) { x = tx; y = ty; break; }
+        }
+        const e = new Entities.Enemy(t, x, y);
+        e.state = 'chase';
+        this.enemies.push(e);
+      }
+      showMessage('ORION SUMMONS REINFORCEMENTS!', 2500);
+      GameAudio.bossRoar();
     },
 
     onEnemyDeath(e) {
+      if (e.stats.barrel) return;   // τα βαρέλια δεν μετράνε ως kills/loot
       this.kills++;
       const p = this.player;
       if (p.perks.vamp) p.hp = Math.min(p.maxHp, p.hp + p.perks.vamp);
       const wst = PlayerSys.stats(PlayerSys.weapon(p), p.perks);
       if (wst.vamp) p.hp = Math.min(p.maxHp, p.hp + wst.vamp);
 
-      // scrap drops
-      const amount = Math.round(e.stats.scrap * p.perks.scrapMul);
+      // scrap drops (elites δίνουν x2.5, hard mode +30%)
+      const amount = Math.round(e.stats.scrap * p.perks.scrapMul *
+        (e.scrapMul || 1) * (meta.hard ? 1.3 : 1));
       if (amount > 0) {
-        const pieces = e.stats.elite ? 4 : 2;
+        const pieces = (e.stats.elite || e.elite) ? 4 : 2;
         for (let i = 0; i < pieces; i++) {
           const pk = new Entities.Pickup('scrap',
             e.x + (Math.random() - 0.5) * 0.7,
@@ -89,6 +134,9 @@
       }
       if (!e.stats.boss && !e.stats.elite && Math.random() < 0.08) {
         this.pickups.push(new Entities.Pickup('medkit', e.x, e.y));
+      }
+      if (e.elite && Math.random() < 0.4) {
+        this.pickups.push(new Entities.Pickup('nade', e.x, e.y));
       }
 
       if (e.type === 'warden') {
@@ -152,8 +200,10 @@
     game.deckIdx = 0;
     game.kills = 0;
     game.scrapEarned = 0;
+    game.dmgDealt = 0;
     game.elapsed = 0;
     game.player = PlayerSys.create(meta);
+    if (meta.hard) game.player.perks.dmgTakenMul *= 1.2;
     loadDeck();
     setState('PLAY');
     showMessage('CLONE #' + meta.runs + ' ONLINE. Find and kill the deck Warden.', 4500);
@@ -166,6 +216,37 @@
     game.player.y = world.playerStart.y;
     game.player.angle = Math.random() * Math.PI * 2;
     game.enemies = world.spawns.map(s => new Entities.Enemy(s.type, s.x, s.y));
+
+    // elites: τυχαία ενισχυμένοι εχθροί από το deck 2 και μετά
+    const eliteChance = game.deckIdx * 0.05 + (meta.hard ? 0.05 : 0);
+    const kinds = ['swift', 'juggernaut', 'leech'];
+    for (const e of game.enemies) {
+      if (e.stats.boss || e.stats.elite || e.stats.barrel) continue;
+      if (Math.random() < eliteChance) {
+        e.makeElite(kinds[(Math.random() * kinds.length) | 0]);
+      }
+    }
+
+    // εκρηκτικά βαρέλια σε τυχαία σημεία
+    let placed = 0, tries = 0;
+    const wantBarrels = 4 + game.deckIdx * 2;
+    while (placed < wantBarrels && tries++ < 500) {
+      const gx = (Math.random() * Procgen.GRID) | 0;
+      const gy = (Math.random() * Procgen.GRID) | 0;
+      if (world.grid[gy][gx] !== Procgen.FLOOR) continue;
+      const cx = gx + 0.5, cy = gy + 0.5;
+      if (Math.hypot(cx - game.player.x, cy - game.player.y) < 4) continue;
+      if (world.terminals.some(t => Math.hypot(t.x - cx, t.y - cy) < 1.5)) continue;
+      game.enemies.push(new Entities.Enemy('barrel', cx, cy));
+      placed++;
+    }
+
+    // hard mode: πιο σκληροί εχθροί
+    if (meta.hard) {
+      for (const e of game.enemies) {
+        if (!e.stats.barrel) { e.hp *= 1.35; e.maxHp = e.hp; }
+      }
+    }
     game.projectiles = [];
     game.pickups = world.pickups.map(p =>
       p.kind === 'weapon'
@@ -242,14 +323,15 @@
   function dieRun() {
     GameAudio.playerDie();
     const run = { deckIdx: game.deckIdx, kills: game.kills, won: false };
-    const cores = Rogue.coresEarned(run);
+    const cores = Math.round(Rogue.coresEarned(run) * (meta.hard ? 1.5 : 1));
     meta.cores += cores;
     meta.bestDeck = Math.max(meta.bestDeck, game.deckIdx + 1);
     Rogue.saveMeta(meta);
     $('death-stats').innerHTML =
-      `Reached: ${Rogue.DECK_NAMES[game.deckIdx]}<br>` +
-      `Kills: ${game.kills} · Scrap collected: ${game.scrapEarned} · ` +
-      `Time: ${fmtTime(game.elapsed)}<br>Seed: ${game.seed}`;
+      `Reached: ${Rogue.DECK_NAMES[game.deckIdx]}${meta.hard ? ' · HARD' : ''}<br>` +
+      `Kills: ${game.kills} · Damage dealt: ${Math.round(game.dmgDealt)} · ` +
+      `Scrap: ${game.scrapEarned}<br>` +
+      `Time: ${fmtTime(game.elapsed)} · Seed: ${game.seed}`;
     $('death-cores').textContent = cores;
     renderMetaCards($('meta-cards-dead'));
     setState('DEAD');
@@ -258,13 +340,14 @@
   function winRun() {
     GameAudio.win();
     const run = { deckIdx: game.deckIdx, kills: game.kills, won: true };
-    const cores = Rogue.coresEarned(run);
+    const cores = Math.round(Rogue.coresEarned(run) * (meta.hard ? 1.5 : 1));
     meta.cores += cores;
     meta.wins++;
     meta.bestDeck = 4;
     Rogue.saveMeta(meta);
     $('win-stats').innerHTML =
-      `Kills: ${game.kills} · Time: ${fmtTime(game.elapsed)} · Seed: ${game.seed}`;
+      `Kills: ${game.kills} · Damage dealt: ${Math.round(game.dmgDealt)} · ` +
+      `Time: ${fmtTime(game.elapsed)}${meta.hard ? ' · HARD' : ''} · Seed: ${game.seed}`;
     $('win-cores').textContent = cores;
     setState('WIN');
   }
@@ -336,6 +419,8 @@
     if (map[s]) $(map[s]).classList.remove('hidden');
 
     const playing = s === 'PLAY';
+    if (playing) GameAudio.musicStart(game.deckIdx);
+    else if (s !== 'PAUSE' && s !== 'SHOP' && s !== 'REWARD') GameAudio.musicStop();
     $('objective').classList.toggle('hidden', !playing);
     if (playing && TouchControls.isTouch) {
       TouchControls.show();
@@ -365,9 +450,16 @@
     if (e.code === 'Tab') { e.preventDefault(); game.showMap = !game.showMap; }
     if (e.code === 'KeyQ') PlayerSys.nextWeapon(game.player, game);
     if (e.code === 'KeyE' && nearTerminal) { renderShop(); setState('SHOP'); }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') doDash();
+    if (e.code === 'KeyG') PlayerSys.throwNade(game.player, game);
     const idx = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
     if (idx >= 0) PlayerSys.switchWeapon(game.player, idx, game);
   });
+
+  function doDash() {
+    if (state !== 'PLAY') return;
+    PlayerSys.dash(game.player, game, game.lastMoveX, game.lastMoveY);
+  }
   document.addEventListener('keyup', e => { keys[e.code] = false; });
 
   document.addEventListener('mousemove', e => {
@@ -395,6 +487,10 @@
     if (state === 'PLAY') PlayerSys.nextWeapon(game.player, game);
   };
   TouchControls.onMapToggle = () => { game.showMap = !game.showMap; };
+  TouchControls.onDash = doDash;
+  TouchControls.onNade = () => {
+    if (state === 'PLAY') PlayerSys.throwNade(game.player, game);
+  };
 
   // κουμπιά UI
   $('start-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
@@ -408,6 +504,20 @@
     setState('META');
   });
   $('meta-close-btn').addEventListener('click', () => setState('MENU'));
+  const diffBtn = $('diff-btn');
+  function renderDiff() {
+    diffBtn.textContent = 'DIFFICULTY: ' + (meta.hard ? 'HARD' : 'NORMAL');
+    diffBtn.classList.toggle('danger', !!meta.hard);
+  }
+  if (diffBtn) {
+    renderDiff();
+    diffBtn.addEventListener('click', () => {
+      meta.hard = !meta.hard;
+      Rogue.saveMeta(meta);
+      GameAudio.uiClick();
+      renderDiff();
+    });
+  }
   $('shop-open-btn').addEventListener('click', () => {
     renderShop();
     setState('SHOP');
@@ -455,14 +565,27 @@
 
     const speed = 3.4 * p.perks.speedMul;
     const moving = Math.abs(mx) > 0.05 || Math.abs(mz) > 0.05;
+    const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
+    const rx = -fy, ry = fx;
     if (moving) {
-      const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-      const rx = -fy, ry = fx;
       const len = Math.max(1, Math.hypot(mx, mz));
+      game.lastMoveX = (fx * mz + rx * mx) / len;
+      game.lastMoveY = (fy * mz + ry * mx) / len;
       Procgen.move(game.world, p,
-        (fx * mz + rx * mx) / len * speed * dt,
-        (fy * mz + ry * mx) / len * speed * dt, p.radius);
+        game.lastMoveX * speed * dt,
+        game.lastMoveY * speed * dt, p.radius);
       p.bob += dt * 9;
+    } else {
+      game.lastMoveX = 0; game.lastMoveY = 0;
+    }
+
+    // --- dash ---
+    p.dashCd = Math.max(0, p.dashCd - dt);
+    p.invulnT = Math.max(0, p.invulnT - dt);
+    if (p.dashT > 0) {
+      p.dashT -= dt;
+      Procgen.move(game.world, p,
+        p.dashDx * 14 * dt, p.dashDy * 14 * dt, p.radius);
     }
 
     // --- fire ---
@@ -532,6 +655,10 @@
         break;
       case 'rounds': p.ammo.rounds += 12; break;
       case 'cells': p.ammo.cells += 20; break;
+      case 'nade':
+        if (p.nades >= p.perks.nadeCap) { pk.taken = false; return; }
+        p.nades = Math.min(p.perks.nadeCap, p.nades + 2);
+        break;
       case 'scrap': {
         const v = pk.value || 5;
         p.scrap += v;
@@ -572,7 +699,7 @@
           ? e.stats.worldH * 0.5 : e.stats.worldH,
         yOff: e.stats.fly || 0,
         flash: e.flash > 0,
-        flashColor: e.statusFx,
+        flashColor: e.statusFx || (e.elite && e.alive() ? e.elite.aura : null),
       });
     }
     for (const pk of game.pickups) {

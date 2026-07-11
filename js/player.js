@@ -111,12 +111,21 @@ const PlayerSys = (() => {
       radius: 0.3,
       fireAnim: 0,
       bob: 0,
+      nades: 1 + (meta.upgrades.nades || 0),
+      dashCd: 0,
+      dashT: 0,
+      dashDx: 0, dashDy: 0,
+      invulnT: 0,
       perks: {
         dmgMul: 1 + (meta.upgrades.dmg || 0) * 0.10,
         rateMul: 1,
         speedMul: 1 + (meta.upgrades.speed || 0) * 0.08,
         vamp: 0,
         scrapMul: 1,
+        dashCdMul: 1,
+        nadeCap: 3 + (meta.upgrades.nades || 0),
+        dmgTakenMul: 1,
+        explMul: 1,
       },
     };
     if (meta.upgrades.shotgun) {
@@ -257,9 +266,10 @@ const PlayerSys = (() => {
     switchWeapon(p, (p.current + 1) % p.weapons.length, game);
   }
 
-  /* Ζημιά στον παίκτη: η πανοπλία απορροφά 40%. */
+  /* Ζημιά στον παίκτη: η πανοπλία απορροφά 40%. i-frames στο dash. */
   function damage(p, amount) {
-    let dmg = amount;
+    if (p.invulnT > 0) return false;
+    let dmg = amount * (p.perks.dmgTakenMul || 1);
     if (p.armor > 0) {
       const absorbed = Math.min(p.armor, dmg * 0.4);
       p.armor -= absorbed;
@@ -269,9 +279,38 @@ const PlayerSys = (() => {
     return p.hp <= 0;
   }
 
+  /* Dash: γρήγορη ώθηση με i-frames. Κατεύθυνση = κίνηση ή βλέμμα. */
+  function dash(p, game, dx, dy) {
+    if (p.dashCd > 0 || p.dashT > 0) return false;
+    if (!dx && !dy) { dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
+    const n = Math.hypot(dx, dy) || 1;
+    p.dashDx = dx / n; p.dashDy = dy / n;
+    p.dashT = 0.16;
+    p.dashCd = 2.4 * (p.perks.dashCdMul || 1);
+    p.invulnT = 0.3;
+    game.audio.dash();
+    return true;
+  }
+
+  /* Χειροβομβίδα: βλήμα με έκρηξη είτε σε πρόσκρουση είτε στο τέλος. */
+  function throwNade(p, game) {
+    if (p.nades <= 0) { game.audio.dryFire(); return false; }
+    p.nades--;
+    const pr = new Entities.Projectile(
+      p.x + Math.cos(p.angle) * 0.4, p.y + Math.sin(p.angle) * 0.4,
+      p.angle, 7.5, 60 * p.perks.dmgMul * (p.perks.explMul || 1),
+      'plasma', true, 2.2);
+    pr.life = 0.85;
+    pr.explodeOnTimeout = true;
+    game.projectiles.push(pr);
+    game.audio.nadeThrow();
+    game.alertEnemies(p.x, p.y, 9);
+    return true;
+  }
+
   return {
     BASES, ELEMENTS, RARITIES, MODS, DROP_POOL, MAX_MODS, MAX_LEVEL, MAX_WEAPONS,
     makeWeapon, stats, displayName, giveWeapon, weapon, dealHit,
-    create, fire, canFire, switchWeapon, nextWeapon, damage,
+    create, fire, canFire, switchWeapon, nextWeapon, damage, dash, throwNade,
   };
 })();
