@@ -114,14 +114,15 @@ const Entities = (() => {
     const world = game.world;
     const prop = world.props.get(key);
     if (!prop) return false;
-    const [px, py] = key.split(',').map(Number);
+    const [pc, prow] = key.split(',').map(Number);
+    const { x: px, y: py } = World.hexCenter ?
+      World.hexCenter(pc, prow) : { x: pc + 0.5, y: prow + 0.5 };
     const K = prop.kind;
 
-    const need = { tree: 'axe', palm: 'axe', rock: 'pickaxe' }[K];
-    const mult = need ? (toolKind === need ? 1 : 0.34) : 1;
-    prop.hp -= Math.max(0.5, power * mult);
+    // το σωστό εργαλείο ελέγχεται στο act() — εδώ η ζημιά είναι πλήρης
+    prop.hp -= Math.max(0.5, power);
     game.audio.hit(K);
-    game.spawnHitFx(px + 0.5, py + 0.5, K);
+    game.spawnHitFx(px, py, K);
 
     if (prop.hp > 0) return false;
 
@@ -132,11 +133,11 @@ const Entities = (() => {
       wall: { wood: 1 }, chest: {}, workbench: { wood: 2 },
       bed: { wood: 2 }, campfire: { stone: 2 }, firepit: { stone: 2 },
     }[K] || {};
-    for (const [item, n] of Object.entries(drops)) game.dropItem(item, n, px + 0.5, py + 0.5);
-    if (K === 'tree' && Math.random() < 0.4) game.dropItem('resin', 1, px + 0.5, py + 0.5);
-    if (K === 'rock' && Math.random() < 0.3) game.dropItem('metal', 1, px + 0.5, py + 0.5);
+    for (const [item, n] of Object.entries(drops)) game.dropItem(item, n, px, py);
+    if (K === 'tree' && Math.random() < 0.4) game.dropItem("resin", 1, px, py);
+    if (K === 'rock' && Math.random() < 0.3) game.dropItem("metal", 1, px, py);
     if (K === 'chest' && prop.inv) {
-      for (const s of prop.inv) if (s) game.dropItem(s.item, s.n, px + 0.5, py + 0.5);
+      for (const s of prop.inv) if (s) game.dropItem(s.item, s.n, px, py);
     }
 
     if (K === 'bush') {

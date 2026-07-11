@@ -12,28 +12,46 @@ const Assets = (() => {
     return c;
   }
 
-  function noiseTile(base, spots, spotAlpha) {
-    return cv(64, 64, (x) => {
-      x.fillStyle = base; x.fillRect(0, 0, 64, 64);
-      let s = 12345;
-      const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-      for (let i = 0; i < 90; i++) {
-        x.fillStyle = spots[(rnd() * spots.length) | 0];
-        x.globalAlpha = spotAlpha;
-        x.fillRect((rnd() * 64) | 0, (rnd() * 64) | 0, 1 + (rnd() * 2 | 0), 1 + (rnd() * 2 | 0));
-      }
-      x.globalAlpha = 1;
+  /* Hex prism tile fallback: ίδια γεωμετρία με το PixelLab pipeline
+     (καμβάς 112x144, top face 83x56, βάθος 26). */
+  function hexTile(top, sideL, sideR) {
+    return cv(112, 144, (x) => {
+      const cx = 56, s = 48, k = 0.58;
+      const hw = Math.sqrt(3) / 2 * s;
+      const topY = 8, topH = 2 * s * k, depth = 26;
+      const pts = [
+        [cx, topY], [cx + hw, topY + topH * 0.25], [cx + hw, topY + topH * 0.75],
+        [cx, topY + topH], [cx - hw, topY + topH * 0.75], [cx - hw, topY + topH * 0.25],
+      ];
+      x.fillStyle = sideL;
+      x.beginPath(); x.moveTo(...pts[4]); x.lineTo(...pts[3]);
+      x.lineTo(pts[3][0], pts[3][1] + depth); x.lineTo(pts[4][0], pts[4][1] + depth);
+      x.closePath(); x.fill();
+      x.fillStyle = sideR;
+      x.beginPath(); x.moveTo(...pts[3]); x.lineTo(...pts[2]);
+      x.lineTo(pts[2][0], pts[2][1] + depth); x.lineTo(pts[3][0], pts[3][1] + depth);
+      x.closePath(); x.fill();
+      x.fillStyle = top;
+      x.beginPath();
+      x.moveTo(...pts[0]);
+      for (let i = 1; i < 6; i++) x.lineTo(...pts[i]);
+      x.closePath(); x.fill();
+      x.strokeStyle = 'rgba(16,18,24,0.9)'; x.lineWidth = 2;
+      x.beginPath();
+      x.moveTo(...pts[0]);
+      for (let i = 1; i < 6; i++) x.lineTo(...pts[i]);
+      x.closePath(); x.stroke();
     });
   }
 
-  // ---------- tiles ----------
+  // ---------- tiles (κλειδιά = hex_* όπως τα PNG) ----------
   A.tiles = {
-    water: noiseTile('#2e9aa8', ['#3fb2c0', '#28899a'], 0.7),
-    water_deep: noiseTile('#1b5f78', ['#215f80', '#174f66'], 0.7),
-    sand: noiseTile('#e8d29a', ['#f2e2b0', '#d8bd82'], 0.8),
-    grass: noiseTile('#69a83c', ['#7cbb4b', '#548c2e'], 0.8),
-    jungle: noiseTile('#3d6b28', ['#4c7d33', '#2e541d'], 0.8),
-    rock: noiseTile('#8b8c86', ['#9c9d97', '#75766f'], 0.8),
+    hex_water_deep: hexTile('#1d6f9a', '#134a68', '#0f3c55'),
+    hex_water: hexTile('#3fc8d8', '#1d6f9a', '#175a80'),
+    hex_sand: hexTile('#e8d29a', '#b09055', '#93753f'),
+    hex_grass: hexTile('#5cae3a', '#7a5a34', '#5f4527'),
+    hex_jungle: hexTile('#33702a', '#4c3a22', '#3a2c18'),
+    hex_rock: hexTile('#8b8c86', '#6b6c66', '#54554f'),
   };
 
   // ---------- props (fallbacks) ----------
@@ -275,7 +293,7 @@ const Assets = (() => {
   }
 
   for (const k of Object.keys(A.tiles)) {
-    reg(`tile_${k}`, img => { A.tiles[k] = wrapFix(img); });
+    reg(k, img => { A.tiles[k] = img; });   // hex_* PNG απευθείας
   }
   for (const k of Object.keys(A.props)) reg(`prop_${k}`, img => { A.props[k] = img; });
   for (const k of Object.keys(A.icons)) reg(`icon_${k}`, img => { A.icons[k] = img; });

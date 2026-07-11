@@ -8,7 +8,6 @@
   ctx.imageSmoothingEnabled = false;
 
   const VW = 288, VH = 512;      // εσωτερική ανάλυση (portrait 9:16)
-  const TS = World.TS;
   const T = Defs.T;
 
   function fitCanvas() {
@@ -53,8 +52,8 @@
       if (p.torchLit && Math.hypot(p.x - x, p.y - y) < 3.2) return true;
       for (const [k, pr] of this.world.props) {
         if (pr.kind !== 'campfire') continue;
-        const [px, py] = k.split(',').map(Number);
-        if (Math.hypot(px + 0.5 - x, py + 0.5 - y) < T.LIGHT_CAMPFIRE) return true;
+        const c = World.hexCenter(...k.split(',').map(Number));
+        if (Math.hypot(c.x - x, c.y - y) < T.LIGHT_CAMPFIRE) return true;
       }
       return false;
     },
@@ -167,7 +166,8 @@
     const p = game.player;
     const d = { south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0] }[
       p.faceLeft && p.dir === 'east' ? 'west' : p.dir];
-    return { x: Math.floor(p.x + d[0]), y: Math.floor(p.y + d[1]) };
+    const h = World.hexAt(p.x + d[0] * 0.9, p.y + d[1] * 0.55);
+    return { x: h.col, y: h.row };
   }
 
   /* Τι θα κάνει το ACT τώρα; */
@@ -182,10 +182,23 @@
     }
     if (best) return { type: 'mob', mob: best };
 
-    // 2. prop στο facing tile ή στο tile του παίκτη
+    // 2. prop στο facing hex, στο hex του παίκτη ή σε γειτονικό hex
+    // (φιλικό για κινητό: το ACT «πιάνει» ό,τι είναι δίπλα σου)
     const f = facingTile();
-    for (const t of [f, { x: Math.floor(p.x), y: Math.floor(p.y) }]) {
+    const cur = World.hexAt(p.x, p.y);
+    const cands = [f, { x: cur.col, y: cur.row }];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const col = cur.col + dc, row = cur.row + dr;
+        const c = World.hexCenter(col, row);
+        if (Math.hypot(c.x - p.x, c.y - p.y) < 1.15) cands.push({ x: col, y: row });
+      }
+    }
+    const seen = new Set();
+    for (const t of cands) {
       const key = t.x + ',' + t.y;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const prop = game.world.props.get(key);
       if (!prop) continue;
       if (prop.kind === 'bush' && prop.looted) continue;
@@ -193,7 +206,8 @@
     }
     // 3. raft spot
     const rs = game.world.raftSpot;
-    if (Math.hypot(rs.x + 0.5 - p.x, rs.y + 0.5 - p.y) < 1.6) {
+    const rc = World.hexCenter(rs.col, rs.row);
+    if (Math.hypot(rc.x - p.x, (rc.y - p.y) * 1.6) < 1.5) {
       return { type: 'raft' };
     }
     return null;
@@ -267,10 +281,20 @@
       collectNear();
       return;
     }
+    // αυστηρά εργαλεία: χωρίς το σωστό εργαλείο ΔΕΝ γίνεται τίποτα
     const toolKind = { tree: 'axe', palm: 'axe', rock: 'pickaxe' }[K];
-    const tool = toolKind ? bestTool(toolKind) : null;
-    Entities.hitProp(game, tgt.key, p, tool ? tool.power : T.HAND_POWER,
-      tool ? toolKind : null);
+    if (toolKind) {
+      const tool = bestTool(toolKind);
+      if (!tool) {
+        GameAudio.error();
+        toast('You need ' + (toolKind === 'axe' ? 'an AXE' : 'a PICKAXE') +
+          ' for this!', 1600);
+        return;
+      }
+      Entities.hitProp(game, tgt.key, p, tool.power, toolKind);
+      return;
+    }
+    Entities.hitProp(game, tgt.key, p, T.HAND_POWER, null);
   }
 
   /* Fiber από γρασίδι με άδεια χέρια όταν δεν υπάρχει άλλος στόχος. */
@@ -305,8 +329,8 @@
     const p = game.player;
     for (const [k, pr] of game.world.props) {
       if (pr.kind !== kind) continue;
-      const [px, py] = k.split(',').map(Number);
-      if (Math.hypot(px + 0.5 - p.x, py + 0.5 - p.y) < r) return true;
+      const c = World.hexCenter(...k.split(',').map(Number));
+      if (Math.hypot(c.x - p.x, c.y - p.y) < r) return true;
     }
     return false;
   }
@@ -346,7 +370,7 @@
   function placeBuild() {
     const f = facingTile();
     const key = f.x + ',' + f.y;
-    const t = World.tileAt(game.world, f.x, f.y);
+    const t = World.tileAtHex(game.world, f.x, f.y);
     if (t <= World.WATER || game.world.props.get(key)) {
       GameAudio.error(); toast("Can't build here", 1200); return;
     }
@@ -363,7 +387,8 @@
     game.flags['built_' + pendingBuild.id] = true;
     Monetize.track('build', { item: pendingBuild.id });
     if (pendingBuild.id === 'bed') {
-      game.player.spawn = { x: f.x + 0.5, y: f.y + 1.2 };
+      const c = World.hexCenter(f.x, f.y);
+      game.player.spawn = { x: c.x, y: c.y + World.VSTEP * 1.5 };
       toast('Respawn point set.');
     }
     pendingBuild = null;
@@ -412,13 +437,13 @@
   function die() {
     GameAudio.playerDie();
     const p = game.player;
-    // τα αντικείμενα πέφτουν σε σακίδιο στο σημείο θανάτου
-    const key = Math.floor(p.x) + ',' + Math.floor(p.y);
+    // τα αντικείμενα πέφτουν σε σακίδιο στο hex του θανάτου
+    const h = World.hexAt(p.x, p.y);
+    const key = h.col + ',' + h.row;
     const bag = World.freshProp('bag');
     bag.inv = p.inv.filter(Boolean);
     if (bag.inv.length && !game.world.props.get(key)) {
       game.world.props.set(key, bag);
-      World.invalidate(Math.floor(p.x), Math.floor(p.y));
     } else if (bag.inv.length) {
       for (const s of bag.inv) game.dropItem(s.item, s.n, p.x, p.y);
     }
@@ -433,12 +458,12 @@
       p.hp = T.RESPAWN_HP;
       p.hunger = Math.max(p.hunger, 40);
       // παίρνει πίσω το σακίδιο αν είναι εδώ
-      const key = Math.floor(p.x) + ',' + Math.floor(p.y);
+      const h = World.hexAt(p.x, p.y);
+      const key = h.col + ',' + h.row;
       const bag = game.world.props.get(key);
       if (bag && bag.kind === 'bag') {
         for (const s of bag.inv) Inv.add(p.inv, s.item, s.n);
         game.world.props.delete(key);
-        World.invalidate(Math.floor(p.x), Math.floor(p.y));
       }
       setState('PLAY');
       toast('A rescue flare revives you!');
@@ -787,24 +812,38 @@
     $('torch-btn').classList.toggle('on', p.torchLit);
   }
 
-  // ---------- render ----------
+  // ---------- render (hex-iso) ----------
   let tick = 0;
   const lightCv = document.createElement('canvas');
   lightCv.width = VW; lightCv.height = VH;
   const lctx = lightCv.getContext('2d');
 
-  function drawSprite(img, wx, wy, cam, scale = 1) {
-    const sx = Math.round(wx * TS - cam.x * TS + VW / 2);
-    const sy = Math.round(wy * TS - cam.y * TS + VH / 2);
-    ctx.drawImage(img, sx - (img.width * scale) / 2,
-      sy - img.height * scale, img.width * scale, img.height * scale);
-    return { sx, sy };
+  const PROP_SCALE = World.SCALE;      // props ζωγραφισμένα στην κλίμακα των tiles
+  const CHAR_SCALE = 0.72;             // ήρωας/mobs λίγο μεγαλύτεροι (chonky)
+
+  function scr(wx, wy, cam) {
+    return World.toScreen(wx, wy, cam, VW, VH);
+  }
+
+  /* bottom-center anchored sprite σε world θέση. */
+  function drawAnchored(img, wx, wy, cam, scale, alpha) {
+    const s = scr(wx, wy, cam);
+    if (alpha !== undefined) ctx.globalAlpha = alpha;
+    ctx.drawImage(img,
+      Math.round(s.x - img.width * scale / 2),
+      Math.round(s.y - img.height * scale + 6 * scale),
+      img.width * scale, img.height * scale);
+    if (alpha !== undefined) ctx.globalAlpha = 1;
   }
 
   function render(dt) {
     tick += dt;
     const p = game.player;
-    const cam = { x: p.x, y: p.y - 0.6 };
+    const cam = { x: p.x, y: p.y - 0.35 };
+
+    // ουρανός/θάλασσα φόντο
+    ctx.fillStyle = '#14324a';
+    ctx.fillRect(0, 0, VW, VH);
 
     World.render(ctx, game.world, cam, VW, VH);
 
@@ -812,88 +851,98 @@
     for (const d of game.drops) {
       d.bob += dt * 3;
       const img = Assets.icons[d.item];
-      const sx = Math.round(d.x * TS - cam.x * TS + VW / 2);
-      const sy = Math.round(d.y * TS - cam.y * TS + VH / 2 + Math.sin(d.bob) * 2);
-      ctx.drawImage(img, sx - 8, sy - 8, 16, 16);
+      const s = scr(d.x, d.y, cam);
+      ctx.drawImage(img, Math.round(s.x - 9),
+        Math.round(s.y - 9 + Math.sin(d.bob) * 2), 18, 18);
     }
 
-    // depth-sorted: props + mobs + player
+    // depth-sorted: props + mobs + player (κατά world y)
     const order = [];
     for (const [k, pr] of game.world.props) {
-      const [px, py] = k.split(',').map(Number);
-      order.push({ y: py + 1, draw: () => drawProp(pr, px, py, cam) });
+      const [pc, prow] = k.split(',').map(Number);
+      const c = World.hexCenter(pc, prow);
+      order.push({ y: c.y, draw: () => drawProp(pr, c, cam) });
     }
-    // raft υπό κατασκευή (στο 0: αχνό περίγραμμα-στόχος)
+    // σκάφος (στο 0: αχνός στόχος)
     const rs = game.world.raftSpot;
-    order.push({ y: rs.y + 1, draw: () => {
+    const rc = World.hexCenter(rs.col, rs.row);
+    order.push({ y: rc.y, draw: () => {
       if (game.raftStage > 0) {
-        drawSprite(Assets.props['raft' + Math.min(4, game.raftStage)], rs.x + 0.5, rs.y + 1, cam);
+        drawAnchored(Assets.props['raft' + Math.min(4, game.raftStage)],
+          rc.x, rc.y, cam, PROP_SCALE);
       } else {
-        ctx.globalAlpha = 0.35 + Math.sin(tick * 3) * 0.1;
-        drawSprite(Assets.props.raft1, rs.x + 0.5, rs.y + 1, cam);
-        ctx.globalAlpha = 1;
+        drawAnchored(Assets.props.raft1, rc.x, rc.y, cam, PROP_SCALE,
+          0.35 + Math.sin(tick * 3) * 0.1);
       }
     } });
     for (const m of game.mobs) {
       if (m.dead) continue;
       order.push({ y: m.y, draw: () => {
         const img = m.sprite();
-        const sx = Math.round(m.x * TS - cam.x * TS + VW / 2);
-        const sy = Math.round(m.y * TS - cam.y * TS + VH / 2);
+        const s = scr(m.x, m.y, cam);
         ctx.save();
-        if (m.faceLeft) { ctx.translate(sx, 0); ctx.scale(-1, 1); ctx.translate(-sx, 0); }
-        ctx.drawImage(img, sx - img.width / 2, sy - img.height + 6);
-        if (m.flash > 0) {
-          ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = 'source-atop';
-          ctx.globalCompositeOperation = 'source-over';
-          ctx.globalAlpha = 1;
-        }
+        if (m.faceLeft) { ctx.translate(s.x, 0); ctx.scale(-1, 1); ctx.translate(-s.x, 0); }
+        if (m.flash > 0) ctx.globalAlpha = 0.55;
+        ctx.drawImage(img,
+          Math.round(s.x - img.width * CHAR_SCALE / 2),
+          Math.round(s.y - img.height * CHAR_SCALE + 5),
+          img.width * CHAR_SCALE, img.height * CHAR_SCALE);
         ctx.restore();
+        ctx.globalAlpha = 1;
       } });
     }
     order.push({ y: p.y, draw: () => {
       const frames = Assets.hero[p.dir] || Assets.hero.south;
       const img = p.moving ? frames[(p.animT | 0) % frames.length] : frames[0];
-      const sx = Math.round(p.x * TS - cam.x * TS + VW / 2);
-      const sy = Math.round(p.y * TS - cam.y * TS + VH / 2);
+      const s = scr(p.x, p.y, cam);
       ctx.save();
       if (p.dir === 'east' && p.faceLeft) {
-        ctx.translate(sx, 0); ctx.scale(-1, 1); ctx.translate(-sx, 0);
+        ctx.translate(s.x, 0); ctx.scale(-1, 1); ctx.translate(-s.x, 0);
       }
       if (p.hurtT > 0) ctx.globalAlpha = 0.6;
-      ctx.drawImage(img, sx - img.width / 2, sy - img.height + 8);
+      ctx.drawImage(img,
+        Math.round(s.x - img.width * CHAR_SCALE / 2),
+        Math.round(s.y - img.height * CHAR_SCALE + 5),
+        img.width * CHAR_SCALE, img.height * CHAR_SCALE);
       ctx.restore();
-      // swing κύκλος
+      ctx.globalAlpha = 1;
       if (p.swingT > 0) {
+        const f = facingTile();
+        const fc = World.hexCenter(f.x, f.y);
+        const fs = scr(fc.x, fc.y, cam);
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
         ctx.beginPath();
-        const f = facingTile();
-        const fx = Math.round((f.x + 0.5) * TS - cam.x * TS + VW / 2);
-        const fy = Math.round((f.y + 0.5) * TS - cam.y * TS + VH / 2);
-        ctx.arc(fx, fy, 10 * (1 - p.swingT / 0.18) + 4, 0, 7);
+        ctx.arc(fs.x, fs.y, 12 * (1 - p.swingT / 0.18) + 5, 0, 7);
         ctx.stroke();
       }
     } });
     order.sort((a, b) => a.y - b.y);
     for (const o of order) o.draw();
 
-    // ghost τοποθέτησης
+    // ghost τοποθέτησης: highlight ολόκληρου του hex
     if (pendingBuild) {
       const f = facingTile();
+      const fc = World.hexCenter(f.x, f.y);
       const img = Assets.props[pendingBuild.id];
-      ctx.globalAlpha = 0.55;
-      drawSprite(img, f.x + 0.5, f.y + 1, cam);
-      ctx.globalAlpha = 1;
-      const sx = Math.round(f.x * TS - cam.x * TS + VW / 2);
-      const sy = Math.round(f.y * TS - cam.y * TS + VH / 2);
-      ctx.strokeStyle = '#fff';
-      ctx.strokeRect(sx + 1, sy + 1, TS - 2, TS - 2);
+      drawAnchored(img, fc.x, fc.y, cam, PROP_SCALE, 0.55);
+      const fs = scr(fc.x, fc.y, cam);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const rx = World.PPU / 2, ry = World.PPU * 0.34;
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 6 + i * Math.PI / 3;
+        const px2 = fs.x + Math.cos(a) * rx;
+        const py2 = fs.y + Math.sin(a) * ry * 2 * 0.58;
+        i ? ctx.lineTo(px2, py2) : ctx.moveTo(px2, py2);
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.lineWidth = 1;
     }
 
     // fx
     for (const f of game.fx) {
-      const sx = Math.round(f.x * TS - cam.x * TS + VW / 2);
-      const sy = Math.round(f.y * TS - cam.y * TS + VH / 2);
+      const s = scr(f.x, f.y, cam);
       ctx.globalAlpha = 1 - f.t * 2;
       if (f.kind === 'puff') {
         ctx.fillStyle = '#e8e0cc';
@@ -901,12 +950,12 @@
           const a = i / 5 * Math.PI * 2;
           const r = f.t * 26;
           ctx.beginPath();
-          ctx.arc(sx + Math.cos(a) * r, sy - 8 + Math.sin(a) * r, 3, 0, 7);
+          ctx.arc(s.x + Math.cos(a) * r, s.y - 8 + Math.sin(a) * r, 3, 0, 7);
           ctx.fill();
         }
       } else {
         ctx.fillStyle = '#fff';
-        ctx.fillRect(sx - 2 + Math.random() * 4, sy - 10 + Math.random() * 4, 3, 3);
+        ctx.fillRect(s.x - 2 + Math.random() * 4, s.y - 10 + Math.random() * 4, 3, 3);
       }
       ctx.globalAlpha = 1;
     }
@@ -919,19 +968,20 @@
       lctx.fillRect(0, 0, VW, VH);
       lctx.globalCompositeOperation = 'destination-out';
       const hole = (wx, wy, r) => {
-        const sx = wx * TS - cam.x * TS + VW / 2;
-        const sy = wy * TS - cam.y * TS + VH / 2;
-        const g = lctx.createRadialGradient(sx, sy, r * TS * 0.25, sx, sy, r * TS);
+        const s = scr(wx, wy, cam);
+        const rp = r * World.PPU;
+        const g = lctx.createRadialGradient(s.x, s.y, rp * 0.25, s.x, s.y, rp);
         g.addColorStop(0, 'rgba(0,0,0,0.95)');
         g.addColorStop(1, 'rgba(0,0,0,0)');
         lctx.fillStyle = g;
-        lctx.beginPath(); lctx.arc(sx, sy, r * TS, 0, 7); lctx.fill();
+        lctx.beginPath(); lctx.arc(s.x, s.y, rp, 0, 7); lctx.fill();
       };
-      hole(p.x, p.y - 0.4, p.torchLit ? 3.5 : 1.3);
+      hole(p.x, p.y - 0.2, p.torchLit ? 3.5 : 1.3);
       for (const [k, pr] of game.world.props) {
         if (pr.kind !== 'campfire') continue;
-        const [px, py] = k.split(',').map(Number);
-        hole(px + 0.5, py + 0.5, T.LIGHT_CAMPFIRE + Math.sin(tick * 6) * 0.15);
+        const [pc, prow] = k.split(',').map(Number);
+        const c = World.hexCenter(pc, prow);
+        hole(c.x, c.y, T.LIGHT_CAMPFIRE + Math.sin(tick * 6) * 0.15);
       }
       lctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(lightCv, 0, 0);
@@ -944,7 +994,7 @@
     }
   }
 
-  function drawProp(pr, px, py, cam) {
+  function drawProp(pr, c, cam) {
     let img;
     if (pr.kind === 'bush') img = pr.looted ?
       (Assets.props.bush_empty || Assets.props.bush) : Assets.props.bush;
@@ -952,7 +1002,7 @@
       img = ((tick * 5) | 0) % 2 ? Assets.props.campfire2 : Assets.props.campfire;
     } else img = Assets.props[pr.kind];
     if (!img) return;
-    drawSprite(img, px + 0.5, py + 1, cam);
+    drawAnchored(img, c.x, c.y, cam, pr.kind === 'bag' ? 0.8 : PROP_SCALE * 1.15);
   }
 
   // ---------- loop ----------
