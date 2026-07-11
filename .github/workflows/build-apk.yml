@@ -45,11 +45,16 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Force landscape orientation
+      - name: Force portrait orientation
         run: |
-          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' \
+          sed -i 's/<activity/<activity android:screenOrientation="sensorPortrait"/' \
             android/app/src/main/AndroidManifest.xml
-          grep -q 'sensorLandscape' android/app/src/main/AndroidManifest.xml
+          grep -q 'sensorPortrait' android/app/src/main/AndroidManifest.xml
+
+      - name: Generate app icon & splash (best effort)
+        run: |
+          npx --yes @capacitor/assets generate --android \
+            --assetPath resources || echo "icon generation skipped"
 
       - name: Sync web assets into Android project
         run: npx cap sync android
@@ -64,32 +69,33 @@ jobs:
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-             dist/nekri-zoni.apk
+             dist/driftland.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nekri-zoni-apk
-          path: dist/nekri-zoni.apk
+          name: driftland-apk
+          path: dist/driftland.apk
           if-no-files-found: error
 
       - name: Remove stale release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # απομεινάρι του παλιού παιχνιδιού στο ίδιο release tag
-          gh release delete-asset android-latest the-backrooms-level0.apk \
+          # απομεινάρι του προηγούμενου παιχνιδιού στο ίδιο release tag
+          gh release delete-asset android-latest nekri-zoni.apk \
             --repo "$GITHUB_REPOSITORY" --yes || true
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-latest
-          name: ΝΕΚΡΗ ΖΩΝΗ — Android (latest)
+          name: DRIFTLAND — Android (latest)
           body: |
-            Αυτόματα χτισμένο APK του «ΝΕΚΡΗ ΖΩΝΗ» — Doom-style roguelike FPS.
+            Automatically built APK of DRIFTLAND — a castaway island
+            survival-crafting game.
 
-            Κατέβασε το `nekri-zoni.apk` παρακάτω και εγκατέστησέ το στο Android
-            (χρειάζεται να επιτρέψεις εγκατάσταση από «άγνωστες πηγές»).
-          files: dist/nekri-zoni.apk
+            Download `driftland.apk` below and install it on Android
+            (allow "install from unknown sources").
+          files: dist/driftland.apk
           make_latest: true

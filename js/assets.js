@@ -1,1124 +1,316 @@
-/* ΝΕΚΡΗ ΖΩΝΗ — Procedural pixel art.
-   Όλα τα γραφικά ζωγραφίζονται εδώ σε offscreen canvases κατά το load.
-   PNG OVERRIDE: αν υπάρχει αρχείο assets/<όνομα>.png (π.χ. assets/shambler_walk1.png),
-   φορτώνεται αυτόματα στη θέση του procedural — δες Assets.OVERRIDE_KEYS. */
+/* DRIFTLAND — Assets: procedural fallbacks + PNG overrides από assets/.
+   Κάθε γραφικό ζωγραφίζεται σε offscreen canvas ώστε το παιχνίδι να
+   δουλεύει και χωρίς PNG· αν υπάρχει assets/<key>.png το αντικαθιστά. */
 
 const Assets = (() => {
+  const A = {};
 
-  // ---------- βοηθητικά ----------
-  function cnv(w, h) {
+  function cv(w, h, draw) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
     return c;
   }
 
-  /* Ζωγραφίζει char-grid pixel map. rows: array of strings, pal: {χαρακτήρας: χρώμα}
-     Ανώμαλα μήκη γραμμών αντιμετωπίζονται ως διαφάνεια. */
-  function px(rows, pal, scale) {
-    const h = rows.length;
-    const w = Math.max(...rows.map(r => r.length));
-    const c = cnv(w * scale, h * scale);
-    const ctx = c.getContext('2d');
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const ch = rows[y][x] || '.';
-        if (ch === '.' || ch === ' ') continue;
-        ctx.fillStyle = pal[ch] || '#f0f';
-        ctx.fillRect(x * scale, y * scale, scale, scale);
+  function noiseTile(base, spots, spotAlpha) {
+    return cv(64, 64, (x) => {
+      x.fillStyle = base; x.fillRect(0, 0, 64, 64);
+      let s = 12345;
+      const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 90; i++) {
+        x.fillStyle = spots[(rnd() * spots.length) | 0];
+        x.globalAlpha = spotAlpha;
+        x.fillRect((rnd() * 64) | 0, (rnd() * 64) | 0, 1 + (rnd() * 2 | 0), 1 + (rnd() * 2 | 0));
       }
-    }
-    return c;
+      x.globalAlpha = 1;
+    });
   }
 
+  // ---------- tiles ----------
+  A.tiles = {
+    water: noiseTile('#2e9aa8', ['#3fb2c0', '#28899a'], 0.7),
+    water_deep: noiseTile('#1b5f78', ['#215f80', '#174f66'], 0.7),
+    sand: noiseTile('#e8d29a', ['#f2e2b0', '#d8bd82'], 0.8),
+    grass: noiseTile('#69a83c', ['#7cbb4b', '#548c2e'], 0.8),
+    jungle: noiseTile('#3d6b28', ['#4c7d33', '#2e541d'], 0.8),
+    rock: noiseTile('#8b8c86', ['#9c9d97', '#75766f'], 0.8),
+  };
+
+  // ---------- props (fallbacks) ----------
+  function tree(trunk, crown, w = 48, h = 64) {
+    return cv(w, h, (x) => {
+      x.fillStyle = trunk; x.fillRect(w / 2 - 3, h - 22, 6, 22);
+      x.fillStyle = crown;
+      x.beginPath(); x.arc(w / 2, h - 34, 16, 0, 7); x.fill();
+      x.beginPath(); x.arc(w / 2 - 10, h - 26, 10, 0, 7); x.fill();
+      x.beginPath(); x.arc(w / 2 + 10, h - 26, 10, 0, 7); x.fill();
+    });
+  }
+  function blob(color, w, h, ry = 0.4) {
+    return cv(w, h, (x) => {
+      x.fillStyle = color;
+      x.beginPath();
+      x.ellipse(w / 2, h * 0.6, w * 0.4, h * ry, 0, 0, 7);
+      x.fill();
+    });
+  }
+
+  A.props = {
+    palm: tree('#9a6b3c', '#4f9440'),
+    tree: tree('#6d4a28', '#3e7d2e'),
+    rock: blob('#8d8e88', 32, 32, 0.34),
+    bush: cv(32, 32, (x) => {
+      x.fillStyle = '#3f7d2f';
+      x.beginPath(); x.arc(16, 20, 11, 0, 7); x.fill();
+      x.fillStyle = '#c33';
+      for (const [bx, by] of [[10, 16], [20, 14], [16, 22], [23, 21]]) {
+        x.beginPath(); x.arc(bx, by, 2, 0, 7); x.fill();
+      }
+    }),
+    driftwood: cv(32, 24, (x) => {
+      x.fillStyle = '#a08058';
+      x.fillRect(4, 12, 24, 4); x.fillRect(8, 7, 20, 4);
+      x.fillStyle = '#8a6c48'; x.fillRect(6, 17, 18, 3);
+    }),
+    wreck: cv(64, 48, (x) => {
+      x.fillStyle = '#6d4a28';
+      x.beginPath();
+      x.moveTo(4, 44); x.lineTo(14, 14); x.lineTo(52, 10); x.lineTo(60, 44);
+      x.closePath(); x.fill();
+      x.fillStyle = '#4c3018'; x.fillRect(14, 22, 40, 4);
+      x.fillStyle = '#d8d2c0'; x.fillRect(30, 2, 3, 22);
+    }),
+    campfire: cv(32, 32, (x) => {
+      x.fillStyle = '#7b7c76';
+      for (let i = 0; i < 7; i++) {
+        const a = i / 7 * Math.PI * 2;
+        x.fillRect(15 + Math.cos(a) * 11, 22 + Math.sin(a) * 5, 4, 4);
+      }
+      x.fillStyle = '#e8752a';
+      x.beginPath(); x.moveTo(16, 6); x.lineTo(22, 22); x.lineTo(10, 22);
+      x.closePath(); x.fill();
+      x.fillStyle = '#ffc040';
+      x.beginPath(); x.moveTo(16, 12); x.lineTo(19, 22); x.lineTo(13, 22);
+      x.closePath(); x.fill();
+    }),
+    campfire2: null, // γεμίζει από campfire tint παρακάτω
+    firepit: cv(32, 32, (x) => {
+      x.fillStyle = '#7b7c76';
+      for (let i = 0; i < 7; i++) {
+        const a = i / 7 * Math.PI * 2;
+        x.fillRect(15 + Math.cos(a) * 11, 22 + Math.sin(a) * 5, 4, 4);
+      }
+      x.fillStyle = '#3a3230'; x.fillRect(11, 18, 10, 5);
+    }),
+    workbench: cv(40, 32, (x) => {
+      x.fillStyle = '#8a6238'; x.fillRect(2, 10, 36, 8);
+      x.fillStyle = '#6d4a28';
+      x.fillRect(5, 18, 5, 12); x.fillRect(30, 18, 5, 12);
+      x.fillStyle = '#9c9d97'; x.fillRect(8, 6, 8, 4);
+    }),
+    wall: cv(32, 32, (x) => {
+      x.fillStyle = '#8a6238';
+      for (let i = 0; i < 4; i++) x.fillRect(2 + i * 8, 4, 6, 26);
+      x.fillStyle = '#6d4a28';
+      for (let i = 0; i < 4; i++) {
+        x.beginPath(); x.moveTo(2 + i * 8, 5); x.lineTo(5 + i * 8, 0); x.lineTo(8 + i * 8, 5);
+        x.closePath(); x.fill();
+      }
+    }),
+    chest: cv(32, 28, (x) => {
+      x.fillStyle = '#8a6238'; x.fillRect(3, 8, 26, 16);
+      x.fillStyle = '#6d4a28'; x.fillRect(3, 8, 26, 5);
+      x.fillStyle = '#c9a227'; x.fillRect(14, 13, 4, 6);
+    }),
+    bed: cv(32, 40, (x) => {
+      x.fillStyle = '#8a6238'; x.fillRect(4, 4, 24, 32);
+      x.fillStyle = '#5d9c46'; x.fillRect(6, 6, 20, 28);
+      x.fillStyle = '#e8e0cc'; x.fillRect(6, 6, 20, 9);
+    }),
+    raft1: cv(64, 48, (x) => {
+      x.fillStyle = '#a08058';
+      for (let i = 0; i < 4; i++) x.fillRect(10, 14 + i * 7, 44, 5);
+    }),
+    raft2: cv(64, 48, (x) => {
+      x.fillStyle = '#a08058';
+      for (let i = 0; i < 4; i++) x.fillRect(10, 14 + i * 7, 44, 5);
+      x.fillStyle = '#c0a070'; x.fillRect(16, 18, 32, 20);
+    }),
+    raft3: cv(64, 48, (x) => {
+      x.fillStyle = '#a08058';
+      for (let i = 0; i < 4; i++) x.fillRect(10, 14 + i * 7, 44, 5);
+      x.fillStyle = '#c0a070'; x.fillRect(16, 18, 32, 20);
+      x.fillStyle = '#6d4a28'; x.fillRect(30, 2, 4, 30);
+    }),
+    raft4: cv(64, 56, (x) => {
+      x.fillStyle = '#a08058';
+      for (let i = 0; i < 4; i++) x.fillRect(10, 24 + i * 7, 44, 5);
+      x.fillStyle = '#c0a070'; x.fillRect(16, 28, 32, 20);
+      x.fillStyle = '#6d4a28'; x.fillRect(30, 2, 4, 40);
+      x.fillStyle = '#f0ead8';
+      x.beginPath(); x.moveTo(34, 4); x.lineTo(56, 16); x.lineTo(34, 26);
+      x.closePath(); x.fill();
+    }),
+    bag: cv(24, 24, (x) => {
+      x.fillStyle = '#9a7448';
+      x.beginPath(); x.arc(12, 14, 8, 0, 7); x.fill();
+      x.fillStyle = '#6d4a28'; x.fillRect(9, 3, 6, 6);
+    }),
+  };
+  // tint helper
   function tint(src, color, alpha) {
-    const c = cnv(src.width, src.height);
-    const ctx = c.getContext('2d');
-    ctx.drawImage(src, 0, 0);
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, c.width, c.height);
-    return c;
-  }
-
-  function scaled(src, sx, sy) {
-    const c = cnv(Math.max(1, Math.round(src.width * sx)),
-                  Math.max(1, Math.round(src.height * sy)));
-    const ctx = c.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(src, 0, 0, c.width, c.height);
-    return c;
-  }
-
-  /* Frames θανάτου: σταδιακή κατάρρευση προς το δάπεδο + λίμνη αίματος. */
-  function deathFrames(src, blood) {
-    const frames = [];
-    const squash = [0.75, 0.45, 0.22];
-    for (let i = 0; i < 3; i++) {
-      const c = cnv(src.width, src.height);
-      const ctx = c.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-      const h = src.height * squash[i];
-      ctx.globalAlpha = 1 - i * 0.15;
-      ctx.drawImage(src, 0, src.height - h, src.width, h);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = blood;
-      const pw = src.width * (0.4 + i * 0.25);
-      ctx.beginPath();
-      ctx.ellipse(src.width / 2, src.height - 4, pw / 2, 5 + i * 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      frames.push(c);
-    }
-    return frames;
-  }
-
-  function painFrame(src) { return tint(src, '#ffffff', 0.55); }
-
-  // ---------- noise/λεπτομέρεια για textures ----------
-  function speckle(ctx, w, h, n, color, a) {
-    ctx.globalAlpha = a;
-    ctx.fillStyle = color;
-    for (let i = 0; i < n; i++) {
-      ctx.fillRect((Math.random() * w) | 0, (Math.random() * h) | 0, 1, 1);
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // ---------- WALL TEXTURES (64x64) ----------
-  const T = 64;
-
-  function texHull() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#4a5462'; ctx.fillRect(0, 0, T, T);
-    // πάνελ
-    ctx.fillStyle = '#535e6e';
-    ctx.fillRect(2, 2, 60, 28); ctx.fillRect(2, 34, 28, 28); ctx.fillRect(34, 34, 28, 28);
-    // σκιές αρμών
-    ctx.fillStyle = '#343c48';
-    ctx.fillRect(0, 0, T, 2); ctx.fillRect(0, 30, T, 4); ctx.fillRect(0, 62, T, 2);
-    ctx.fillRect(0, 0, 2, T); ctx.fillRect(30, 32, 4, 32); ctx.fillRect(62, 0, 2, T);
-    // πριτσίνια
-    ctx.fillStyle = '#6d7a8c';
-    for (const [x, y] of [[6, 6], [56, 6], [6, 24], [56, 24], [6, 38], [25, 38], [38, 38], [57, 38], [6, 57], [25, 57], [38, 57], [57, 57]]) {
-      ctx.fillRect(x, y, 2, 2);
-    }
-    speckle(ctx, T, T, 160, '#2c333d', 0.5);
-    speckle(ctx, T, T, 60, '#7c8aa0', 0.4);
-    return c;
-  }
-
-  function texBlood(base) {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.drawImage(base, 0, 0);
-    ctx.fillStyle = 'rgba(120,10,10,0.85)';
-    ctx.beginPath();
-    ctx.ellipse(40, 20, 14, 10, 0.5, 0, Math.PI * 2);
-    ctx.fill();
-    // στάλες
-    for (const [x, y, w, h] of [[38, 30, 3, 16], [45, 28, 2, 22], [33, 28, 2, 10], [50, 26, 2, 8]]) {
-      ctx.fillRect(x, y, w, h);
-    }
-    speckle(ctx, T, T, 40, '#7a0a0a', 0.7);
-    return c;
-  }
-
-  function texVent() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#3a424e'; ctx.fillRect(0, 0, T, T);
-    ctx.fillStyle = '#20262e';
-    for (let y = 6; y < 60; y += 10) ctx.fillRect(8, y, 48, 5);
-    ctx.fillStyle = '#525d6c';
-    for (let y = 4; y < 60; y += 10) ctx.fillRect(8, y, 48, 2);
-    ctx.strokeStyle = '#293039'; ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, 60, 60);
-    speckle(ctx, T, T, 120, '#1c2128', 0.5);
-    return c;
-  }
-
-  function texTech() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#2b3038'; ctx.fillRect(0, 0, T, T);
-    ctx.fillStyle = '#1c2026';
-    ctx.fillRect(4, 4, 56, 24);
-    // «οθόνη» με γραμμές δεδομένων
-    ctx.fillStyle = '#27e08a';
-    for (let y = 8; y < 24; y += 4) ctx.fillRect(8, y, 20 + ((y * 13) % 28), 2);
-    // καλώδια
-    ctx.strokeStyle = '#141518'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(10, 32); ctx.bezierCurveTo(14, 44, 6, 52, 12, 62); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(24, 32); ctx.bezierCurveTo(28, 46, 20, 50, 26, 62); ctx.stroke();
-    // λαμπάκια
-    const lights = ['#ff4040', '#ffd040', '#40ff70', '#40c0ff'];
-    lights.forEach((col, i) => {
-      ctx.fillStyle = col;
-      ctx.fillRect(38 + i * 6, 36, 3, 3);
+    return cv(src.width, src.height, (x) => {
+      x.drawImage(src, 0, 0);
+      x.globalCompositeOperation = 'source-atop';
+      x.globalAlpha = alpha;
+      x.fillStyle = color;
+      x.fillRect(0, 0, src.width, src.height);
     });
-    ctx.fillStyle = '#3a424e';
-    ctx.fillRect(36, 44, 24, 16);
-    speckle(ctx, T, T, 100, '#12151a', 0.6);
-    return c;
   }
+  A.props.campfire2 = tint(A.props.campfire, '#ff9040', 0.25);
 
-  function texDoor() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#59636f'; ctx.fillRect(0, 0, T, T);
-    ctx.fillStyle = '#454e59';
-    ctx.fillRect(0, 0, 4, T); ctx.fillRect(60, 0, 4, T);
-    // ρίγες κινδύνου
-    ctx.save();
-    ctx.beginPath(); ctx.rect(6, 24, 52, 16); ctx.clip();
-    for (let i = -2; i < 10; i++) {
-      ctx.fillStyle = i % 2 ? '#e8c020' : '#20242a';
-      ctx.beginPath();
-      ctx.moveTo(i * 12, 40); ctx.lineTo(i * 12 + 8, 24);
-      ctx.lineTo(i * 12 + 16, 24); ctx.lineTo(i * 12 + 8, 40);
-      ctx.fill();
-    }
-    ctx.restore();
-    // κεντρικός αρμός
-    ctx.fillStyle = '#242a31';
-    ctx.fillRect(30, 0, 4, T);
-    ctx.fillStyle = '#6c7887';
-    ctx.fillRect(8, 8, 18, 4); ctx.fillRect(38, 8, 18, 4);
-    ctx.fillRect(8, 52, 18, 4); ctx.fillRect(38, 52, 18, 4);
-    speckle(ctx, T, T, 120, '#333a43', 0.5);
-    return c;
-  }
-
-  function texElevator() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#2e3c34'; ctx.fillRect(0, 0, T, T);
-    ctx.fillStyle = '#1c2620';
-    ctx.fillRect(6, 6, 52, 52);
-    ctx.fillStyle = '#33e070';
-    ctx.fillRect(30, 6, 4, 52);
-    // βέλος κάτω (κάθοδος)
-    ctx.beginPath();
-    ctx.moveTo(32, 46); ctx.lineTo(20, 30); ctx.lineTo(27, 30);
-    ctx.lineTo(27, 16); ctx.lineTo(37, 16); ctx.lineTo(37, 30); ctx.lineTo(44, 30);
-    ctx.closePath();
-    ctx.fillStyle = '#33e070';
-    ctx.fill();
-    ctx.strokeStyle = '#33e070'; ctx.lineWidth = 2;
-    ctx.strokeRect(3, 3, 58, 58);
-    return c;
-  }
-
-  function texCore() {
-    const c = cnv(T, T), ctx = c.getContext('2d');
-    ctx.fillStyle = '#1c1424'; ctx.fillRect(0, 0, T, T);
-    // παλλόμενοι «νευρώνες» της AI
-    ctx.strokeStyle = '#8a30d0'; ctx.lineWidth = 2;
-    for (let i = 0; i < 6; i++) {
-      ctx.beginPath();
-      ctx.moveTo(4 + i * 11, 0);
-      ctx.bezierCurveTo(20, 20 + i * 4, 44 - i * 4, 40, 60 - i * 9, 64);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#c060ff';
-    for (const [x, y] of [[12, 14], [30, 30], [48, 18], [20, 48], [44, 50]]) {
-      ctx.fillRect(x, y, 3, 3);
-    }
-    speckle(ctx, T, T, 80, '#0d0a12', 0.7);
-    return c;
-  }
-
-  // ---------- SPRITES εχθρών ----------
-  /* Παλέτες: κοινές συντομεύσεις
-     k=σκούρο περίγραμμα, r=κόκκινο, R=φωτεινό κόκκινο, m=μέταλλο, M=ανοιχτό μέταλλο */
-
-  const shamblerPal = {
-    k: '#101408', g: '#4e6b32', G: '#69894a', d: '#38491f',
-    m: '#5a6470', M: '#8a95a4', r: '#c02020', R: '#ff5030',
-    b: '#801010', t: '#c8b090',
-  };
-  // 14x18, scale 4 -> 56x72
-  const shamblerBase = [
-    '....kkkkk.....',
-    '...kGGGGGk....',
-    '...kGgRgGk....',
-    '...kGgggGk....',
-    '....kGGGk.....',
-    '..kkkgggkkk...',
-    '.kGGggggggGk..',
-    'kMmkgggggkGGk.',
-    'kMmkgdddgkgGk.',
-    '.kk.gdddg.kgk.',
-    '....gdddg..t..',
-    '....gdddg.....',
-    '....kgggk.....',
-  ];
-  const shamblerLegsA = [
-    '....kg.gk.....',
-    '....kg..gk....',
-    '....kg...gk...',
-    '...kdk...kdk..',
-    '...kk.....kk..',
-  ];
-  const shamblerLegsB = [
-    '....kg.gk.....',
-    '...kg...gk....',
-    '..kg.....gk...',
-    '.kdk.....kdk..',
-    '.kk.......kk..',
-  ];
-  const shamblerAttack = [
-    '....kkkkk.....',
-    '...kGGGGGk....',
-    '...kGgRgGk....',
-    '...kGgggGk....',
-    'kMMkkGGGkkttk.',
-    'kmm.kgggk.ttk.',
-    '.k.kgggggk.k..',
-    '...kgggggk....',
-    '...kgdddgk....',
-    '....gdddg.....',
-    '....gdddg.....',
-    '....gdddg.....',
-    '....kgggk.....',
-  ];
-
-  const spitterPal = {
-    k: '#141208', y: '#b0a028', Y: '#d4c440', d: '#7c701c',
-    r: '#c03030', R: '#ff6040', o: '#503c10', w: '#f0e8c0',
-  };
-  const spitterBase = [
-    '....kkkkkk....',
-    '..kkYYYYYYkk..',
-    '.kYYyRyyRyYYk.',
-    '.kYyyyyyyyyYk.',
-    'kYYykwwwwkyYYk',
-    'kYyykroorkyyYk',
-    'kYyyykrrkyyyYk',
-    'kYyyyyyyyyyyYk',
-    '.kYyydddyyYk..',
-    '.kYyydddyyYk..',
-    '..kYyyyyyYk...',
-    '...kkyyykk....',
-  ];
-  const spitterLegsA = [
-    '...ky....yk...',
-    '..kdk....kdk..',
-    '..kk......kk..',
-  ];
-  const spitterLegsB = [
-    '....ky..yk....',
-    '...kdk..kdk...',
-    '...kk....kk...',
-  ];
-  const spitterAttack = spitterBase.map((row, i) =>
-    i === 4 ? 'kYYykwwwwkyYYk' :
-    i === 5 ? 'kYyykRRRRkyyYk' :
-    i === 6 ? 'kYyykRRRRkyyYk' : row);
-
-  const dronePal = {
-    k: '#0c0e14', m: '#4a525e', M: '#727e8e', r: '#ff3030',
-    R: '#ff8060', b: '#20c0ff', d: '#2c323c',
-  };
-  const droneBase = [
-    '..kmmmmmmk..',
-    '.kmMMMMMMmk.',
-    'kmMdddddd Mk'.replace(' ', 'M'),
-    'kmdkrrrrkdmk',
-    'kmdkrRRrkdmk',
-    'kmMddddddMmk',
-    '.kmMMMMMMmk.',
-    '..kkmddmkk..',
-    '....kbbk....',
-  ];
-  const droneFrameB = droneBase.map((row, i) =>
-    i === 8 ? '....k..k....' : row);
-
-  const heavyPal = {
-    k: '#0e0c10', m: '#5c545e', M: '#847a86', d: '#39343c',
-    r: '#c02828', R: '#ff4838', o: '#e08020', g: '#282430',
-  };
-  const heavyBase = [
-    '...kkkkkkkk...',
-    '..kMMMMMMMMk..',
-    '..kMdkrrkdMk..',
-    '..kMdkrrkdMk..',
-    '.kkMMMMMMMMkk.',
-    'kMMkmmmmmmkMMk',
-    'kMdkmggggmkdMk',
-    'kMdkmggggmkooo',
-    'kkkkmggggmkkok',
-    '...kmggggmk.k.',
-    '...kmmmmmmk...',
-    '...kmk..kmk...',
-  ];
-  const heavyLegsA = [
-    '..kdmk..kmdk..',
-    '..kddk..kddk..',
-    '..kkk....kkk..',
-  ];
-  const heavyLegsB = [
-    '..kdmk..kmdk..',
-    '.kddk....kddk.',
-    '.kkk......kkk.',
-  ];
-  const heavyAttack = heavyBase.map((row, i) =>
-    i === 7 ? 'kMdkmggggmkRRR' :
-    i === 8 ? 'kkkkmggggmkkRk' : row);
-
-  const bossPal = {
-    k: '#08060c', m: '#3c3648', M: '#5c546c', p: '#8a30d0',
-    P: '#c060ff', r: '#ff3050', w: '#e8e0f0', d: '#241f2e',
-  };
-  // 20x22, μεγάλο — scale 7 -> 140x154
-  const bossBase = [
-    '....kkkkkkkkkkkk....',
-    '..kkMMMMMMMMMMMMkk..',
-    '.kMMmmmmmmmmmmmmMMk.',
-    '.kMmkkkkkkkkkkkkmMk.',
-    'kMmkwwPPkkkkPPwwkmMk',
-    'kMmkwPPPkkkkPPPwkmMk',
-    'kMmkkPPkkkkkkPPkkmMk',
-    'kMmkkkkkkkkkkkkkkmMk',
-    'kMmkkwwwwwwwwwwkkmMk',
-    'kMmkkwkwkwkwkwkkkmMk',
-    '.kMmkkkkkkkkkkkkmMk.',
-    '.kMMmmmmmmmmmmmmMMk.',
-    '..kkMMMMkkkkMMMMkk..',
-    '...kmmPk....kPmmk...',
-    '...kmPPk....kPPmk...',
-    '..kmPPk......kPPmk..',
-    '..kmPk........kPmk..',
-    '.kmPPk........kPPmk.',
-    '.kPPk..........kPPk.',
-    '.kPk............kPk.',
-    '.kk..............kk.',
-    '....................',
-  ];
-  const bossAttack = bossBase.map((row, i) =>
-    (i === 4 || i === 5) ? row.replace(/P/g, 'r').replace(/w/g, 'r') : row);
-
-  // ---------- PICKUPS / PROPS (μικρά, scale 3) ----------
-  const pickPal = {
-    k: '#101014', w: '#e8e8f0', r: '#d02020', y: '#e8c020',
-    m: '#6a7482', M: '#98a4b4', c: '#20d0e0', C: '#a0f0ff',
-    p: '#a040e0', P: '#d090ff', g: '#30c060', o: '#e07820',
-    d: '#30343c', b: '#803010',
-  };
-  const medkitMap = [
-    '.kkkkkkkkk.',
-    'kwwwwwwwwwk',
-    'kwwwrrrwwwk',
-    'kwrrrrrrrwk',
-    'kwwwrrrwwwk',
-    'kwwwwwwwwwk',
-    '.kkkkkkkkk.',
-  ];
-  const shellsMap = [
-    '.kkkkkkkk.',
-    'kddddddddk',
-    'kdyoyoyodk',
-    'kdyoyoyodk',
-    'kyyyyyyyyk',
-    '.kkkkkkkk.',
-  ];
-  const cellsMap = [
-    '.kkkkkkkk.',
-    'kddddddddk',
-    'kdcCcCcCdk',
-    'kdcCcCcCdk',
-    'kcccccccck',
-    '.kkkkkkkk.',
-  ];
-  const scrapMap = [
-    '...kk.....',
-    '..kCck.kk.',
-    '.kcCCckcck',
-    'kcCCCccck.',
-    '.kcCcck...',
-    '..kkk.....',
-  ];
-  const coreMap = [
-    '....kk....',
-    '...kPPk...',
-    '..kPPPPk..',
-    '.kPpppPPk.',
-    '.kPppppPk.',
-    '..kPppPk..',
-    '...kPPk...',
-    '....kk....',
-  ];
-  const termMap = [
-    '.kkkkkkkkkk.',
-    'kmMMMMMMMMmk',
-    'kmkggggggkmk',
-    'kmkgkgkggkmk',
-    'kmkggggggkmk',
-    'kmMMMMMMMMmk',
-    'kmmkyykmmmmk',
-    'kmmmmmmmmmmk',
-    '.kmk....kmk.',
-    '.kkk....kkk.',
-  ];
-  const termPal = Object.assign({}, pickPal, { g: '#27e08a' });
-
-  // projectiles (scale 3)
-  const acidMap = [
-    '.kgk.',
-    'kgGgk',
-    'kGgGk'.replace('G', 'G'),
-    '.kgk.',
-  ];
-  const acidPal = { k: '#0a1408', g: '#40c030', G: '#a0ff60' };
-  const plasmaMap = [
-    '.kck.',
-    'kcCck',
-    'kCcCk',
-    '.kck.',
-  ];
-  const plasmaPal = { k: '#04141c', c: '#20a0e0', C: '#b0f0ff' };
-  const boltMap = [
-    '.krk.',
-    'krRrk',
-    'kRrRk',
-    '.krk.',
-  ];
-  const boltPal = { k: '#180404', r: '#e03020', R: '#ffb060' };
-
-  // ---------- ΟΠΛΑ πρώτου προσώπου (όψη από πίσω, με χέρια) ----------
-  // Διπλάσια ανάλυση (~40x27, scale 2) για λεπτομέρεια: σκίαση 3 τόνων,
-  // χαραγές, σκόπευτρα, λαβές, φωτεινά στοιχεία.
-  const wpnPal = {
-    k: '#0b0b0f', D: '#15161c', d: '#242630', g: '#343744',
-    m: '#4a4e5e', M: '#6a7080', H: '#8e96a8',
-    b: '#5a3c1c', B: '#7a5528', W: '#96703c',
-    c: '#1898c8', C: '#40d8ff', E: '#b0f4ff',
-    y: '#e8c020', o: '#e07820', r: '#c03030',
-    s: '#a87848', S: '#c89058', T: '#e8b878',
-  };
-
-  const pistolMap = [
-    '........................................',
-    '..................kkkk..................',
-    '.................kHkkHk.................',
-    '.................kkMMkk.................',
-    '................kkkkkkkk................',
-    '...............kHMMMMMMHk...............',
-    '...............kMmmmmmmmk...............',
-    '...............kMdgdgdgdk...............',
-    '...............kMdgdgdgdk...............',
-    '...............kMdgdgdgdk...............',
-    '...............kMmmmmmmmk...............',
-    '...............kHMMMMMMHk...............',
-    '...............kkkkkkkkkk...............',
-    '...............kdDDDDDDDk...............',
-    '..............kkdDDrDDDdkk..............',
-    '.............kSskdDDDDDdksSk............',
-    '............ksSSkdddddddkSSsk...........',
-    '...........ksSTSkgggggggkSTSsk..........',
-    '...........ksSSSkkgggggkkSSSsk..........',
-    '...........ksSSSSkkkkkkkSSSSsk..........',
-    '...........ksSSTSSSSSSSSSTSSsk..........',
-    '............ksSSSSSSSSSSSSsk............',
-    '............ksSSSSSSSSSSSsk.............',
-    '.............ksSSSSSSSSSsk..............',
-    '..............ksssssssssk...............',
-    '...............kkkkkkkkk................',
-    '........................................',
-  ];
-
-  const shotgunMap = [
-    '........................................',
-    '................kkkkkkkk................',
-    '...............kHMMMMMMHk...............',
-    '..............kMmkDDDDkmMk..............',
-    '..............kMkDkkkkDkMk..............',
-    '..............kMkDkDDkDkMk..............',
-    '..............kMkDkkkkDkMk..............',
-    '..............kMmkDDDDkmMk..............',
-    '..............kHMkmmmmkMHk..............',
-    '..............kkkkkkkkkkkk..............',
-    '..............kMmgmmgmmgMk..............',
-    '..............kMmgmmgmmgMk..............',
-    '..............kkkkkkkkkkkk..............',
-    '.............kBWbbbbbbbbWBk.............',
-    '............kkBbbkbbbbkbbBkk............',
-    '..........kSskBbbkbbbbkbbBksSk..........',
-    '.........ksSSkBWbbbbbbbbWBkSSsk.........',
-    '........ksSTSSkkkkkkkkkkkkSSTSsk........',
-    '........ksSSSSSkdDDDDDDdkSSSSSsk........',
-    '........ksSSSSSkdDDDDDDdkSSSSSsk........',
-    '........ksSSTSSSkkkkkkkkSSTSSSsk........',
-    '.........ksSSSSSSSSSSSSSSSSSSsk.........',
-    '..........ksSSSSSSSSSSSSSSSsk...........',
-    '...........ksSSSSSSSSSSSSsk.............',
-    '............kssssssssssssk..............',
-    '.............kkkkkkkkkkkk...............',
-    '........................................',
-  ];
-
-  const rifleMap = [
-    '........................................',
-    '..............kkkkkkkkkkkk..............',
-    '.............kHMMMMMMMMMMHk.............',
-    '.............kMmmkkkkkkmmMk.............',
-    '.............kMmkCECCECkmMk.............',
-    '.............kMmkcCcccCckmMk............',
-    '.............kMmkCcCCcCCkmMk............',
-    '.............kMmkcCcccCckmMk............',
-    '.............kMmkkkkkkkkmMk.............',
-    '.............kMmmgmmgmmgmMk.............',
-    '.............kMdgdgdgdgddMk.............',
-    '.............kkkkkkkkkkkkkk.............',
-    '.............kdDkyoyokDDDdk.............',
-    '.............kdDkkkkkkDDDdk.............',
-    '............kkdDDDDDDDDDdkk.............',
-    '..........kSskdddddddddddksSk...........',
-    '.........ksSSkgggggggggggkSSsk..........',
-    '........ksSTSkkgggggggggkkSTSsk.........',
-    '........ksSSSSkkkkkkkkkkkSSSSsk.........',
-    '........ksSSSSSSSSSSSSSSSSSSSsk.........',
-    '........ksSSTSSSSSSSSSSSSTSSSsk.........',
-    '.........ksSSSSSSSSSSSSSSSSsk...........',
-    '..........ksSSSSSSSSSSSSSsk.............',
-    '...........ksSSSSSSSSSSsk...............',
-    '............kssssssssssk................',
-    '.............kkkkkkkkkk.................',
-    '........................................',
-  ];
-
-  const launcherMap = [
-    '........................................',
-    '.............kkkkkkkkkkkkkk.............',
-    '............kHMMMMMMMMMMMMHk............',
-    '...........kMmkkkkkkkkkkkkmMk...........',
-    '...........kMkDDdDDDDDDdDDkMk...........',
-    '...........kMkDkkkkkkkkkkDkMk...........',
-    '...........kMkDkcCCEECCckDkMk...........',
-    '...........kMkDkCcEEEEcCkDkMk...........',
-    '...........kMkDkcCCEECCckDkMk...........',
-    '...........kMkDkkkkkkkkkkDkMk...........',
-    '...........kMkDDdDDDDDDdDDkMk...........',
-    '...........kMmkkkkkkkkkkkkmMk...........',
-    '...........kHMyoyoyoyoyoyoMHk...........',
-    '...........kkkkkkkkkkkkkkkkkk...........',
-    '............kMmmgmmgmmgmmgMk............',
-    '............kkkkkkkkkkkkkkkk............',
-    '..........kSskdDDDDDDDDDDdksSk..........',
-    '.........ksSSkdddddddddddDkSSsk.........',
-    '........ksSTSkgggggggggggggkSTSsk.......',
-    '........ksSSSkkgggggggggggkkSSSsk.......',
-    '........ksSSSSkkkkkkkkkkkkkSSSSsk.......',
-    '........ksSSTSSSSSSSSSSSSSSTSSSsk.......',
-    '.........ksSSSSSSSSSSSSSSSSSSsk.........',
-    '..........ksSSSSSSSSSSSSSSSsk...........',
-    '...........ksSSSSSSSSSSSSsk.............',
-    '............kssssssssssssk..............',
-    '.............kkkkkkkkkkkk...............',
-  ];
-
-  const smgMap = [
-    '........................................',
-    '..................kkkk..................',
-    '.................kHmmHk.................',
-    '.................kkkkkk.................',
-    '................kHMMMMHk................',
-    '................kMmmmmmk................',
-    '................kMdgdgdk................',
-    '................kMmmmmmk................',
-    '...............kkkkkkkkk................',
-    '...............kdDDDDDDk................',
-    '..............kkdDrDDDdkk...............',
-    '.............kSskdDDDDdksSk.............',
-    '............ksSSkddddddkSSsk............',
-    '...........ksSTSkgggggkkSTSsk...........',
-    '...........ksSSSkkgggkkSSSSsk...........',
-    '...........ksSSSSkkkkkSSSSSsk...........',
-    '...........ksSSTSSkDkSSTSSsk............',
-    '............ksSSSSkDkSSSSsk.............',
-    '............ksSSSSkDkSSSsk..............',
-    '.............ksSSSkkkSSsk...............',
-    '..............ksssssssk.................',
-    '...............kkkkkkk..................',
-    '........................................',
-  ];
-
-  const handcannonMap = [
-    '........................................',
-    '.................kkkkkk.................',
-    '................kHkkkkHk................',
-    '................kkMMMMkk................',
-    '...............kHMMMMMMHk...............',
-    '...............kMmmmmmmmk...............',
-    '...............kMdgdgdgdk...............',
-    '...............kMdgdgdgdk...............',
-    '...............kMmmmmmmmk...............',
-    '..............kkHMMMMMMHkk..............',
-    '.............kmkkkkkkkkkkmk.............',
-    '.............kmDdDDDDDDdDmk.............',
-    '.............kmDdDDrDDDdDmk.............',
-    '.............kkkdDDDDDDdkkk.............',
-    '............kSskdDDDDDDdksSk............',
-    '...........ksSSkddddddddkSSsk...........',
-    '..........ksSTSkggggggggkSTSsk..........',
-    '..........ksSSSkkggggggkkSSSsk..........',
-    '..........ksSSSSkkkkkkkkSSSSsk..........',
-    '..........ksSSTSSSSSSSSSTSSSsk..........',
-    '...........ksSSSSSSSSSSSSSsk............',
-    '............ksSSSSSSSSSSsk..............',
-    '.............kssssssssssk...............',
-    '..............kkkkkkkkkk................',
-    '........................................',
-  ];
-
-  const railgunMap = [
-    '........................................',
-    '..............kk........kk..............',
-    '.............kHMk......kMHk.............',
-    '.............kMmk.CEC..kmMk.............',
-    '.............kMmk.ECE..kmMk.............',
-    '.............kMmk.CEC..kmMk.............',
-    '.............kMmk......kmMk.............',
-    '.............kMmkkkkkkkkmMk.............',
-    '.............kMmmCCCCCCmmMk.............',
-    '.............kMmmccccccmmMk.............',
-    '.............kMdmmmmmmmmdMk.............',
-    '.............kkkkkkkkkkkkkk.............',
-    '.............kdDkyoyoykDDdk.............',
-    '.............kdDkkkkkkkDDdk.............',
-    '............kkdDDDDDDDDDdkk.............',
-    '..........kSskdddddddddddksSk...........',
-    '.........ksSSkgggggggggggkSSsk..........',
-    '........ksSTSkkgggggggggkkSTSsk.........',
-    '........ksSSSSkkkkkkkkkkkSSSSsk.........',
-    '........ksSSSSSSSSSSSSSSSSSSSsk.........',
-    '........ksSSTSSSSSSSSSSSSTSSSsk.........',
-    '.........ksSSSSSSSSSSSSSSSSsk...........',
-    '..........ksSSSSSSSSSSSSSsk.............',
-    '...........ksSSSSSSSSSSsk...............',
-    '............kssssssssssk................',
-    '.............kkkkkkkkkk.................',
-    '........................................',
-  ];
-
-  const incineratorMap = [
-    '........................................',
-    '................kkkkkkkk................',
-    '...............kdDDDDDDdk...............',
-    '...............kDkkkkkkDk...............',
-    '...............kDkoOOokDk...............'.replace(/O/g, 'o'),
-    '...............kDkoyyokDk...............',
-    '...............kDkoOOokDk...............'.replace(/O/g, 'o'),
-    '...............kDkkkkkkDk...............',
-    '..............kkdDDDDDDdkk..............',
-    '.............kHMMMMMMMMMMHk.............',
-    '.............kMmkryrkkmmmMk.............',
-    '.............kMmkkkkkkmmmMk.............',
-    '.............kMdmmmmmmmmdMk.............',
-    '.............kkkkkkkkkkkkkk.............',
-    '............kSskdDDDDDDDdksSk...........',
-    '...........ksSSkdddddddddkSSsk..........',
-    '..........ksSTSkgggggggggkSTSsk.........',
-    '..........ksSSSkkgggggggkkSSSsk.........',
-    '..........ksSSSSkkkkkkkkkSSSSsk.........',
-    '..........ksSSTSSSSSSSSSSTSSSsk.........',
-    '...........ksSSSSSSSSSSSSSSsk...........',
-    '............ksSSSSSSSSSSSsk.............',
-    '.............ksssssssssssk..............',
-    '..............kkkkkkkkkkk...............',
-    '........................................',
-  ];
-
-  const arccasterMap = [
-    '........................................',
-    '............kkk..........kkk............',
-    '...........kHMk..........kMHk...........',
-    '...........kMmk...C..E...kmMk...........',
-    '...........kMmk..E.C..C..kmMk...........',
-    '...........kMmk.C..E.E...kmMk...........',
-    '...........kMmk..........kmMk...........',
-    '...........kMmkk........kkmMk...........',
-    '...........kMmmkkkkkkkkkkmmMk...........',
-    '...........kMmmmCCCCCCCCmmmMk...........',
-    '...........kMdmmccccccccmmdMk...........',
-    '...........kkkkkkkkkkkkkkkkkk...........',
-    '..............kdDkCcCkDDdk..............',
-    '..............kdDkkkkkDDdk..............',
-    '.............kkdDDDDDDDdkk..............',
-    '...........kSskdddddddddksSk............',
-    '..........ksSSkgggggggggkSSsk...........',
-    '.........ksSTSkkgggggggkkSTSsk..........',
-    '.........ksSSSSkkkkkkkkkSSSSsk..........',
-    '.........ksSSTSSSSSSSSSSTSSSsk..........',
-    '..........ksSSSSSSSSSSSSSSsk............',
-    '...........ksSSSSSSSSSSSsk..............',
-    '............ksssssssssssk...............',
-    '.............kkkkkkkkkkk................',
-    '........................................',
-  ];
-
-  function muzzleFlash(base) {
-    const c = cnv(base.width, base.height);
-    const ctx = c.getContext('2d');
-    ctx.drawImage(base, 0, 0);
-    const cx = c.width * 0.5, cy = c.height * 0.10;
-    ctx.fillStyle = '#fff8c0';
-    ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + 0.26;
-      const r = i % 2 ? 7 : 18;
-      ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#ffb030';
-    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
-    return c;
-  }
-
-  // ---------- MUGSHOT (12x12, scale 3) ----------
-  const facePal = {
-    k: '#181008', s: '#c89058', S: '#e0aa70', h: '#3c2814',
-    e: '#f0f0f0', p: '#101820', r: '#c02020', w: '#f0f0f0',
-    d: '#804040', b: '#601010',
-  };
-  const faceOk = [
-    '.khhhhhhhhk.',
-    'khhhhhhhhhhk',
-    'khsSSSSSSshk',
-    'khsSSSSSSshk',
-    'ksepkSSkepsk',
-    'ksSSSSSSSSsk',
-    'ksSSskksSSsk',
-    'ksSSSSSSSSsk',
-    '.ksSkkkkSsk.',
-    '.ksSSSSSSsk.',
-    '..kssssssk..',
-    '...kkkkkk...',
-  ];
-  const faceGrin = faceOk.map((row, i) =>
-    i === 8 ? '.kskwwwwksk.' :
-    i === 9 ? '.ksSkkkkSsk.' : row);
-  const facePain = faceOk.map((row, i) =>
-    i === 4 ? 'kskkkSSkkksk' :
-    i === 8 ? '.ksSkddkSsk.' :
-    i === 9 ? '.ksSkkkkSsk.' : row);
-  const faceLow = faceOk.map((row, i) =>
-    i === 2 ? 'khsSbSSbSshk' :
-    i === 4 ? 'ksdpkSSkdpsk' :
-    i === 7 ? 'ksSbSSSSbSsk' :
-    i === 8 ? '.ksSkrrkSsk.' : row);
-  const faceDead = faceOk.map((row, i) =>
-    i === 4 ? 'kskxkSSkxksk'.replace(/x/g, 'k') :
-    i === 8 ? '.ksSkkkkSsk.' :
-    i === 9 ? '.ksskkkkssk.' : row);
-
-  // ---------- συναρμολόγηση ----------
-  function withLegs(base, legs) { return base.concat(legs); }
-
-  function build() {
-    const A = {};
-
-    A.tex = {
-      hull: texHull(),
-      vent: texVent(),
-      tech: texTech(),
-      door: texDoor(),
-      elevator: texElevator(),
-      core: texCore(),
-    };
-    A.tex.hullBlood = texBlood(A.tex.hull);
-
-    // θεματικές παραλλαγές ανά deck (0..3): cryo/engine/hydro/core
-    const themes = [
-      { tint: '#4060c0', a: 0.16 },
-      { tint: '#c04820', a: 0.18 },
-      { tint: '#30a040', a: 0.16 },
-      { tint: '#7030b0', a: 0.20 },
-    ];
-    A.deckTex = themes.map(th => ({
-      hull: tint(A.tex.hull, th.tint, th.a),
-      hullBlood: tint(A.tex.hullBlood, th.tint, th.a),
-      vent: tint(A.tex.vent, th.tint, th.a),
-      tech: tint(A.tex.tech, th.tint, th.a * 0.5),
-      door: A.tex.door,
-      elevator: A.tex.elevator,
-      core: A.tex.core,
-    }));
-
-    function enemySet(baseRows, legsA, legsB, attackRows, pal, scale, blood) {
-      const walk1 = px(withLegs(baseRows, legsA), pal, scale);
-      const walk2 = px(withLegs(baseRows, legsB), pal, scale);
-      const attack = px(withLegs(attackRows, legsA), pal, scale);
-      return {
-        walk: [walk1, walk2],
-        attack,
-        pain: painFrame(walk1),
-        death: deathFrames(walk1, blood),
-      };
-    }
-
-    A.enemies = {
-      shambler: enemySet(shamblerBase, shamblerLegsA, shamblerLegsB,
-        shamblerAttack, shamblerPal, 4, 'rgba(140,20,20,0.9)'),
-      spitter: enemySet(spitterBase, spitterLegsA, spitterLegsB,
-        spitterAttack, spitterPal, 4, 'rgba(140,140,20,0.9)'),
-      heavy: enemySet(heavyBase, heavyLegsA, heavyLegsB,
-        heavyAttack, heavyPal, 5, 'rgba(80,80,90,0.9)'),
-    };
-    // drone: δικά του frames (αιωρείται)
-    const drone1 = px(droneBase, dronePal, 4);
-    const drone2 = px(droneFrameB, dronePal, 4);
-    A.enemies.drone = {
-      walk: [drone1, drone2],
-      attack: tint(drone1, '#ff4030', 0.35),
-      pain: painFrame(drone1),
-      death: deathFrames(drone1, 'rgba(40,40,50,0.9)'),
-    };
-    // Φρουρός: heavy recolor, μεγαλύτερος
-    const wardenWalk1 = tint(scaled(A.enemies.heavy.walk[0], 1.25, 1.25), '#e08020', 0.30);
-    A.enemies.warden = {
-      walk: [wardenWalk1, tint(scaled(A.enemies.heavy.walk[1], 1.25, 1.25), '#e08020', 0.30)],
-      attack: tint(scaled(A.enemies.heavy.attack, 1.25, 1.25), '#e08020', 0.30),
-      pain: painFrame(wardenWalk1),
-      death: deathFrames(wardenWalk1, 'rgba(180,100,20,0.9)'),
-    };
-    const boss1 = px(bossBase, bossPal, 7);
-    A.enemies.boss = {
-      walk: [boss1, tint(boss1, '#c060ff', 0.12)],
-      attack: px(bossAttack, bossPal, 7),
-      pain: painFrame(boss1),
-      death: deathFrames(boss1, 'rgba(140,60,220,0.9)'),
-    };
-    // νέοι εχθροί — procedural fallback: recolors μέχρι να φορτώσουν τα PNG
-    const boomer1 = tint(A.enemies.shambler.walk[0], '#ff8020', 0.4);
-    A.enemies.boomer = {
-      walk: [boomer1, tint(A.enemies.shambler.walk[1], '#ff8020', 0.4)],
-      attack: tint(boomer1, '#ffb040', 0.5),
-      pain: painFrame(boomer1),
-      death: deathFrames(boomer1, 'rgba(255,120,20,0.9)'),
-    };
-    const sentry1 = tint(drone1, '#d04040', 0.35);
-    A.enemies.sentry = {
-      walk: [sentry1, tint(drone2, '#d04040', 0.35)],
-      attack: tint(sentry1, '#ff5050', 0.45),
-      pain: painFrame(sentry1),
-      death: deathFrames(sentry1, 'rgba(80,40,40,0.9)'),
-    };
-
-    // εκρηκτικό βαρέλι (fallback: ζωγραφιστό) — συμμετέχει ως "enemy" set
-    const barrel = (() => {
-      const c = document.createElement('canvas');
-      c.width = 24; c.height = 32;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#8c2018'; ctx.fillRect(3, 4, 18, 26);
-      ctx.fillStyle = '#a83028'; ctx.fillRect(5, 4, 6, 26);
-      ctx.fillStyle = '#e0b020'; ctx.fillRect(3, 10, 18, 3);
-      ctx.fillStyle = '#181410'; ctx.fillRect(3, 20, 18, 2);
-      ctx.fillStyle = '#301008'; ctx.fillRect(3, 4, 18, 2);
-      ctx.fillRect(3, 28, 18, 2);
-      return c;
-    })();
-    A.enemies.barrel = {
-      walk: [barrel],
-      attack: barrel,
-      pain: barrel,
-      death: deathFrames(barrel, 'rgba(255,140,30,0.95)'),
-    };
-
-    // χειροβομβίδα (fallback)
-    const nade = (() => {
-      const c = document.createElement('canvas');
-      c.width = 16; c.height = 16;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#3a4430'; ctx.beginPath();
-      ctx.arc(8, 9, 5.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#88c060'; ctx.fillRect(4, 8, 8, 2);
-      ctx.fillStyle = '#888c94'; ctx.fillRect(6, 2, 4, 3);
-      return c;
-    })();
-
-    A.pickups = {
-      medkit: px(medkitMap, pickPal, 3),
-      rounds: px(shellsMap, pickPal, 3),
-      cells: px(cellsMap, pickPal, 3),
-      scrap: px(scrapMap, pickPal, 3),
-      core: px(coreMap, pickPal, 3),
-      nade,
-    };
-    A.props = {
-      terminal: px(termMap, termPal, 4),
-    };
-    const flameMap = [
-      '.kok.',
-      'koYok'.replace('Y', 'y'),
-      'kyYyk'.replace('Y', 'y'),
-      '.kyk.',
-    ];
-    const flamePal = { k: '#1c0c04', o: '#e05010', y: '#ffb030' };
-    A.projectiles = {
-      acid: px(acidMap, acidPal, 3),
-      plasma: px(plasmaMap, plasmaPal, 3),
-      bolt: px(boltMap, boltPal, 3),
-      flame: px(flameMap, flamePal, 3),
-    };
-
-    function weapon(map) {
-      const idle = px(map, wpnPal, 2);
-      return { idle, fire: muzzleFlash(idle) };
-    }
-    A.weapons = {
-      pistol: weapon(pistolMap),
-      smg: weapon(smgMap),
-      shotgun: weapon(shotgunMap),
-      handcannon: weapon(handcannonMap),
-      rifle: weapon(rifleMap),
-      railgun: weapon(railgunMap),
-      incinerator: weapon(incineratorMap),
-      arccaster: weapon(arccasterMap),
-      launcher: weapon(launcherMap),
-    };
-    // μικρά εικονίδια εδάφους για weapon pickups
-    A.wpnIcons = {};
-    for (const [key, w] of Object.entries(A.weapons)) {
-      A.wpnIcons[key] = scaled(w.idle, 0.45, 0.45);
-    }
-
-    A.face = {
-      ok: px(faceOk, facePal, 3),
-      grin: px(faceGrin, facePal, 3),
-      pain: px(facePain, facePal, 3),
-      low: px(faceLow, facePal, 3),
-      dead: px(faceDead, facePal, 3),
-    };
-
-    // δάπεδα/οροφές ανά deck για το per-pixel casting (fallback: πλάκες)
-    function mkSurf(base, line) {
-      const c = document.createElement('canvas');
-      c.width = 64; c.height = 64;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = base; ctx.fillRect(0, 0, 64, 64);
-      ctx.strokeStyle = line; ctx.lineWidth = 1;
-      for (let gx = 0; gx < 64; gx += 16) {
-        for (let gy = 0; gy < 64; gy += 16) ctx.strokeRect(gx + 0.5, gy + 0.5, 16, 16);
+  // ---------- ήρωας (fallback: απλός χαρακτήρας 3 όψεων) ----------
+  function heroFrame(dir, step) {
+    return cv(64, 64, (x) => {
+      const legL = step % 2 === 0 ? 3 : -3;
+      x.translate(32, 34);
+      // πόδια
+      x.fillStyle = '#7a5a3a';
+      x.fillRect(-7, 14 + (dir === 'east' ? 0 : legL), 6, 12);
+      x.fillRect(1, 14 - (dir === 'east' ? 0 : legL), 6, 12);
+      // σώμα
+      x.fillStyle = '#e8e0cc'; x.fillRect(-9, -6, 18, 20);
+      // κεφάλι
+      x.fillStyle = '#d8a878';
+      x.beginPath(); x.arc(0, -14, 9, 0, 7); x.fill();
+      x.fillStyle = '#3a2c1c';
+      if (dir === 'south') x.fillRect(-9, -23, 18, 6);
+      if (dir === 'north') { x.fillRect(-9, -23, 18, 10); }
+      if (dir === 'east') { x.fillRect(-9, -23, 18, 6); x.fillRect(4, -20, 5, 6); }
+      if (dir === 'south') {
+        x.fillStyle = '#222';
+        x.fillRect(-4, -15, 2, 2); x.fillRect(2, -15, 2, 2);
       }
-      for (let i = 0; i < 180; i++) {
-        ctx.fillStyle = `rgba(0,0,0,${0.05 + (i % 3) * 0.04})`;
-        ctx.fillRect((Math.random() * 64) | 0, (Math.random() * 64) | 0, 1, 1);
-      }
-      return c;
-    }
-    A.floorTex = [
-      mkSurf('#2c3444', '#20283a'),
-      mkSurf('#3a2820', '#2a1c14'),
-      mkSurf('#243428', '#182418'),
-      mkSurf('#231b30', '#161022'),
-    ];
-    A.ceilTex = [mkSurf('#1a202c', '#12161f'), mkSurf('#120d1c', '#0c0814')];
-    // τα procedural κρατιούνται ως fallback αν το file:// ταϊνάρει το canvas
-    A.floorTexFallback = A.floorTex.slice();
-    A.ceilTexFallback = A.ceilTex.slice();
-
-    A.ui = { statusbar: null }; // προαιρετικό AI panel (ui_statusbar.png)
-
-    return A;
+    });
+  }
+  A.hero = {};
+  for (const dir of ['south', 'north', 'east']) {
+    A.hero[dir] = [0, 1, 2, 3].map(i => heroFrame(dir, i));
   }
 
-  const A = build();
+  // ---------- mobs (fallback) ----------
+  function mobBlob(color, eye, w = 48) {
+    return cv(w, w, (x) => {
+      x.fillStyle = color;
+      x.beginPath(); x.ellipse(w / 2, w * 0.62, w * 0.36, w * 0.26, 0, 0, 7); x.fill();
+      x.fillStyle = eye;
+      x.fillRect(w * 0.62, w * 0.5, 4, 4);
+    });
+  }
+  A.mobs = {
+    crab: [mobBlob('#d84a30', '#111'), mobBlob('#c8402a', '#111')],
+    boar: [mobBlob('#7a5638', '#fff', 56), mobBlob('#6d4c30', '#fff', 56)],
+    shade: [mobBlob('#25242e', '#fff', 52), mobBlob('#1c1b26', '#fff', 52)],
+  };
 
-  /* ---------- PNG OVERRIDE ----------
-     Ρίξε assets/<key>.png για να αντικαταστήσεις οποιοδήποτε γραφικό,
-     π.χ. assets/enemy_shambler_walk1.png, assets/tex_hull.png,
-     assets/weapon_pistol_idle.png, assets/face_ok.png κ.λπ. */
+  // ---------- item icons (fallback: χρωματιστά κουτάκια με γράμμα) ----------
+  const ICON_COLORS = {
+    wood: '#9a6b3c', stone: '#8b8c86', fiber: '#b9c26a', berry: '#c93a3a',
+    meat_raw: '#c96a6a', meat_cooked: '#9a5a2a', metal: '#a8a89a',
+    resin: '#d8a020', rope: '#c0a070', cloth: '#e8e0cc', axe: '#7a8a96',
+    pickaxe: '#7a8a96', spear: '#8a6238', torch: '#e8752a',
+  };
+  A.icons = {};
+  for (const [k, col] of Object.entries(ICON_COLORS)) {
+    A.icons[k] = cv(32, 32, (x) => {
+      x.fillStyle = col;
+      x.beginPath(); x.arc(16, 16, 11, 0, 7); x.fill();
+      x.fillStyle = 'rgba(255,255,255,0.85)';
+      x.font = 'bold 12px monospace';
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(k[0].toUpperCase(), 16, 17);
+    });
+  }
+
+  A.ui = { titlebg: null, appicon: null };
+
+  // ---------- PNG overrides ----------
   const OVERRIDES = [];
-  function reg(path, apply) { OVERRIDES.push({ path, apply }); }
+  function reg(key, apply) { OVERRIDES.push({ key, apply }); }
 
-  const BLOOD = {
-    shambler: 'rgba(140,20,20,0.9)', spitter: 'rgba(140,140,20,0.9)',
-    drone: 'rgba(40,40,50,0.9)', heavy: 'rgba(80,80,90,0.9)',
-    warden: 'rgba(180,100,20,0.9)', boss: 'rgba(140,60,220,0.9)',
-    boomer: 'rgba(255,120,20,0.9)', sentry: 'rgba(80,40,40,0.9)',
-  };
-
-  for (const [name, e] of Object.entries(A.enemies)) {
-    if (name === 'barrel') continue; // δικό του override παρακάτω
-    // slots για walk/death/attack animations (έως 4 frames το καθένα)·
-    // τα αρχεία φορτώνουν async, οπότε ξαναχτίζουμε τα arrays σε κάθε άφιξη
-    const walkSlots = [null, null, null, null];
-    const dieSlots = [null, null, null, null];
-    const attackSlots = [null, null, null, null];
-    const rebuildWalk = () => {
-      const frames = walkSlots.filter(Boolean);
-      if (frames.length) e.walk = frames;
-    };
-    const rebuildDeath = () => {
-      const frames = dieSlots.filter(Boolean);
-      if (frames.length) e.death = frames;
-    };
-    const rebuildAttack = () => {
-      const frames = attackSlots.filter(Boolean);
-      if (frames.length) e.attack = frames;
-    };
-    for (let n = 1; n <= 4; n++) {
-      reg(`enemy_${name}_walk${n}`, img => {
-        walkSlots[n - 1] = img;
-        rebuildWalk();
-        if (n === 1) {
-          // παράγωγα από το βασικό frame — έτσι pain/attack είναι πάντα
-          // ο ΙΔΙΟΣ χαρακτήρας με το walk (αν δεν έρθουν δικά τους frames)
-          e.pain = painFrame(img);
-          if (!dieSlots.some(Boolean)) e.death = deathFrames(img, BLOOD[name]);
-          if (!attackSlots.some(Boolean)) e.attack = tint(img, '#ffe0a0', 0.35);
+  /* Κάνει μια υφή πραγματικά wrap-able: σβήνει το seam αναμειγνύοντας
+     μια λωρίδα κάθε άκρης με την απέναντι. */
+  function wrapFix(img, band = 4) {
+    const w = img.width, h = img.height;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(img, 0, 0);
+    try {
+      const d = x.getImageData(0, 0, w, h);
+      const px = d.data;
+      const mix = (i1, i2, t) => {
+        for (let k = 0; k < 3; k++) {
+          px[i1 + k] = px[i1 + k] * (1 - t) + px[i2 + k] * t;
         }
-      });
-      reg(`enemy_${name}_die${n}`, img => {
-        dieSlots[n - 1] = img;
-        rebuildDeath();
-      });
-      reg(`enemy_${name}_attack${n}`, img => {
-        attackSlots[n - 1] = img;
-        rebuildAttack();
+      };
+      for (let y = 0; y < h; y++) {
+        for (let b = 0; b < band; b++) {
+          const t = 0.5 * (1 - b / band);
+          mix((y * w + b) * 4, (y * w + (w - 1 - b)) * 4, t);
+          mix((y * w + (w - 1 - b)) * 4, (y * w + b) * 4, t);
+        }
+      }
+      for (let xx = 0; xx < w; xx++) {
+        for (let b = 0; b < band; b++) {
+          const t = 0.5 * (1 - b / band);
+          mix((b * w + xx) * 4, ((h - 1 - b) * w + xx) * 4, t);
+          mix(((h - 1 - b) * w + xx) * 4, (b * w + xx) * 4, t);
+        }
+      }
+      x.putImageData(d, 0, 0);
+    } catch (e) { /* tainted canvas σε file:// — κρατάμε την υφή ως έχει */ }
+    return c;
+  }
+
+  for (const k of Object.keys(A.tiles)) {
+    reg(`tile_${k}`, img => { A.tiles[k] = wrapFix(img); });
+  }
+  for (const k of Object.keys(A.props)) reg(`prop_${k}`, img => { A.props[k] = img; });
+  for (const k of Object.keys(A.icons)) reg(`icon_${k}`, img => { A.icons[k] = img; });
+  for (const dir of ['south', 'north', 'east']) {
+    const slots = [null, null, null, null];
+    for (let n = 1; n <= 4; n++) {
+      reg(`hero_${dir}_walk${n}`, img => {
+        slots[n - 1] = img;
+        const frames = slots.filter(Boolean);
+        if (frames.length) A.hero[dir] = frames;
       });
     }
-    reg(`enemy_${name}_attack`, img => {
-      if (!attackSlots.some(Boolean)) e.attack = img;
-    });
   }
-  reg('prop_barrel', img => {
-    const b = A.enemies.barrel;
-    b.walk = [img];
-    b.attack = img;
-    b.pain = img;
-    b.death = deathFrames(img, 'rgba(255,140,30,0.95)');
-  });
-  reg('pickup_nade', img => { A.pickups.nade = img; });
-  for (const key of Object.keys(A.tex)) {
-    reg(`tex_${key}`, img => {
-      A.tex[key] = img;
-      A.deckTex.forEach(set => { if (set[key]) set[key] = img; });
-    });
+  for (const m of Object.keys(A.mobs)) {
+    const slots = [null, null, null, null];
+    for (let n = 1; n <= 4; n++) {
+      reg(`mob_${m}_walk${n}`, img => {
+        slots[n - 1] = img;
+        const frames = slots.filter(Boolean);
+        if (frames.length) A.mobs[m] = frames;
+      });
+    }
   }
-  for (const [name, w] of Object.entries(A.weapons)) {
-    // νέο idle → νέο muzzle flash + νέο εικονίδιο εδάφους
-    reg(`weapon_${name}_idle`, img => {
-      w.idle = img;
-      w.fire = muzzleFlash(img);
-      A.wpnIcons[name] = scaled(img, 0.45, 0.45);
-    });
-    reg(`weapon_${name}_fire`, img => { w.fire = img; });
-  }
-  for (const key of Object.keys(A.pickups)) reg(`pickup_${key}`, img => { A.pickups[key] = img; });
-  for (const key of Object.keys(A.face)) reg(`face_${key}`, img => { A.face[key] = img; });
-  for (const key of Object.keys(A.projectiles)) reg(`proj_${key}`, img => { A.projectiles[key] = img; });
-  reg('prop_terminal', img => { A.props.terminal = img; });
-  reg('ui_statusbar', img => { A.ui.statusbar = img; });
-  A.floorTex.forEach((_, i) => reg(`tex_floor${i}`, img => { A.floorTex[i] = img; }));
-  A.ceilTex.forEach((_, i) => reg(`tex_ceil${i}`, img => { A.ceilTex[i] = img; }));
+  reg('ui_titlebg', img => { A.ui.titlebg = img; });
+  reg('ui_appicon', img => { A.ui.appicon = img; });
 
-  A.OVERRIDE_KEYS = OVERRIDES.map(o => o.path);
-
+  A.OVERRIDE_KEYS = OVERRIDES.map(o => o.key);
   A.loadOverrides = function (done) {
     let pending = OVERRIDES.length;
-    if (!pending) { done(); return; }
+    if (!pending) { done && done(); return; }
     for (const o of OVERRIDES) {
       const img = new Image();
-      img.onload = () => { o.apply(img); if (--pending === 0) done(); };
-      img.onerror = () => { if (--pending === 0) done(); };
-      img.src = 'assets/' + o.path + '.png';
+      img.onload = () => { o.apply(img); if (--pending === 0) done && done(); };
+      img.onerror = () => { if (--pending === 0) done && done(); };
+      img.src = 'assets/' + o.key + '.png';
     }
   };
 

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>DEAD ZONE</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>DRIFTLAND — Island Survival</title>
 <style>
   @font-face {
     font-family: 'Press Start 2P';
@@ -15,374 +15,341 @@
     src: url('fonts/vt323.woff2') format('woff2');
     font-display: swap;
   }
+
   * { margin: 0; padding: 0; box-sizing: border-box;
-      -webkit-user-select: none; user-select: none;
       -webkit-tap-highlight-color: transparent; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  body { font-family: 'VT323', 'Courier New', monospace; color: #cfd4e0;
-         touch-action: none; }
-
-  #game { position: absolute; inset: 0;
-          display: flex; align-items: center; justify-content: center; }
-  #screen { image-rendering: pixelated; image-rendering: crisp-edges;
-            background: #000; }
-
-  /* scanlines για ρετρό CRT αίσθηση */
-  #scanlines {
-    position: absolute; inset: 0; z-index: 30; pointer-events: none;
-    background: repeating-linear-gradient(
-      0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px);
-  }
-
-  #damage-flash {
-    position: absolute; inset: 0; z-index: 8; pointer-events: none;
-    background: radial-gradient(ellipse at center,
-      rgba(200,20,20,0) 40%, rgba(200,20,20,0.55) 100%);
-    opacity: 0; transition: opacity 0.25s;
-  }
-
-  #message {
-    position: absolute; left: 50%; top: 12%;
-    transform: translateX(-50%);
-    z-index: 9; pointer-events: none;
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a1520;
     font-family: 'VT323', monospace;
-    font-size: clamp(18px, 3vmin, 28px); letter-spacing: 0.06em;
-    color: #e8e4c8; text-shadow: 0 0 8px #000, 0 0 3px #000;
-    opacity: 0; transition: opacity 0.4s;
-    text-align: center; max-width: 90vw;
-  }
-  #weapon-toast {
-    position: absolute; left: 50%; bottom: 27%;
-    transform: translateX(-50%);
-    z-index: 9; pointer-events: none;
-    font-family: 'Press Start 2P', monospace;
-    font-size: clamp(9px, 1.6vmin, 14px); letter-spacing: 0.08em;
-    text-shadow: 0 0 8px #000;
-    opacity: 0; transition: opacity 0.3s;
-    white-space: nowrap;
-  }
-  #objective {
-    position: absolute; left: 10px; top: 8px; z-index: 9; pointer-events: none;
-    font-family: 'Press Start 2P', monospace;
-    font-size: clamp(7px, 1.2vmin, 10px); letter-spacing: 0.05em;
-    line-height: 1.6;
-    color: rgba(120, 230, 140, 0.75); text-shadow: 0 0 6px #000;
+    color: #e8e4d8;
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
   }
 
-  /* -------- overlays -------- */
-  .overlay {
-    position: absolute; inset: 0; z-index: 20;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    text-align: center; padding: 16px;
-    background: rgba(6, 8, 12, 0.92);
-    overflow-y: auto;
+  #game {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
   }
-  .hidden { display: none !important; }
+  canvas#screen { image-rendering: pixelated; background: #14324a; }
 
-  /* Το κύριο μενού παίρνει το PixelLab background αν υπάρχει */
-  #menu {
-    background:
-      linear-gradient(rgba(6, 8, 12, 0.62), rgba(6, 8, 12, 0.85)),
-      url('assets/ui_menubg.png') center / cover no-repeat,
-      rgba(6, 8, 12, 0.92);
-    image-rendering: pixelated;
+  /* -------- HUD -------- */
+  #hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  #hud > * { pointer-events: auto; }
+
+  .bars {
+    position: absolute; top: calc(8px + env(safe-area-inset-top)); left: 10px;
+    width: 130px; pointer-events: none;
   }
-
-  h1 { font-family: 'Press Start 2P', monospace;
-       font-size: clamp(22px, 5.5vmin, 44px); letter-spacing: 0.06em;
-       font-weight: 400; line-height: 1.25;
-       color: #e8321e;
-       text-shadow: 2px 2px 0 #5a0c04, 4px 4px 0 #200402,
-                    0 0 34px rgba(232, 50, 30, 0.55);
-       margin-bottom: 4px; }
-  h2 { font-family: 'Press Start 2P', monospace;
-       font-size: clamp(13px, 2.8vmin, 22px); letter-spacing: 0.05em;
-       font-weight: 400; line-height: 1.35;
-       color: #e8321e;
-       text-shadow: 1px 1px 0 #5a0c04, 2px 2px 0 #200402;
-       margin-bottom: 16px; }
-  .sub { font-family: 'Press Start 2P', monospace;
-         font-size: clamp(7px, 1.4vmin, 11px); letter-spacing: 0.25em;
-         opacity: 0.55; margin-bottom: 18px; }
-  .lore { max-width: 640px; line-height: 1.4;
-          font-family: 'VT323', monospace;
-          font-size: clamp(17px, 2.8vmin, 22px); opacity: 0.9;
-          margin-bottom: 18px; }
-  .stats { font-family: 'VT323', monospace;
-           font-size: clamp(16px, 2.6vmin, 20px); opacity: 0.7;
-           margin: 10px 0 18px; line-height: 1.6; }
-  .controls-hint { font-family: 'VT323', monospace;
-                   font-size: clamp(15px, 2.3vmin, 18px); opacity: 0.5;
-                   line-height: 1.6; margin-bottom: 18px; }
-
-  /* DOOM-style κουμπιά: μεταλλικό bevel + έντονο κείμενο */
-  button {
-    font-family: 'Press Start 2P', monospace;
-    font-size: clamp(9px, 1.8vmin, 13px);
-    font-weight: 400;
-    letter-spacing: 0.06em; padding: 14px 30px; cursor: pointer;
-    background: linear-gradient(#3a3e46, #24262c 45%, #1a1c20);
-    color: #d8dce6;
+  .bar {
+    height: 12px; margin-bottom: 5px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    position: relative;
+  }
+  .bar .fill { position: absolute; inset: 1px; transform-origin: left; }
+  #hp-fill { background: linear-gradient(#e85040, #b02818); width: 100%; }
+  #food-fill { background: linear-gradient(#e8a040, #b07018); width: 100%; }
+  .bar .ico {
+    position: absolute; left: -2px; top: -3px; font-size: 11px;
     text-shadow: 1px 1px 0 #000;
-    border: 2px solid;
-    border-color: #5a606c #101216 #101216 #5a606c;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12),
-                0 2px 6px rgba(0,0,0,0.6);
-    transition: filter 0.12s, transform 0.08s;
-    margin: 4px;
-  }
-  button:hover { filter: brightness(1.25); }
-  button:active { transform: translateY(1px);
-    border-color: #101216 #5a606c #5a606c #101216; }
-  button.primary {
-    background: linear-gradient(#7a1a10, #56100a 45%, #3808044);
-    background: linear-gradient(#7a1a10, #56100a 45%, #380804);
-    color: #ffd9d2;
-    border-color: #a8402e #200402 #200402 #a8402e;
-  }
-  button:disabled { opacity: 0.3; pointer-events: none; }
-
-  /* reward/shop/meta cards */
-  .cards { display: flex; gap: 10px; flex-wrap: wrap;
-           justify-content: center; margin: 14px 0; max-width: 96vw; }
-  .card {
-    width: clamp(160px, 28vmin, 220px); padding: 14px 10px;
-    background: linear-gradient(#2e3138, #1c1e24 60%, #15171b);
-    border: 2px solid;
-    border-color: #565c68 #0e1013 #0e1013 #565c68;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
-                0 3px 10px rgba(0,0,0,0.65);
-    cursor: pointer;
-    transition: filter 0.12s, transform 0.1s, box-shadow 0.15s;
-  }
-  .card:hover, .card:active { filter: brightness(1.2); transform: translateY(-3px); }
-  .card h3 { font-family: 'Press Start 2P', monospace;
-             font-size: clamp(8px, 1.6vmin, 11px); letter-spacing: 0.04em;
-             font-weight: 400; line-height: 1.5;
-             color: #ffd040; text-shadow: 1px 1px 0 #000;
-             margin-bottom: 8px; }
-  .card p { font-family: 'VT323', monospace;
-            font-size: clamp(14px, 2.3vmin, 17px); opacity: 0.8;
-            line-height: 1.35; margin-bottom: 4px; }
-  .card .cost { display: block; margin-top: 8px; color: #50e0f0;
-                font-family: 'Press Start 2P', monospace;
-                font-size: clamp(7px, 1.4vmin, 10px); letter-spacing: 0.05em; }
-  .card.disabled { opacity: 0.35; pointer-events: none; }
-  #shop-terminal-img {
-    height: clamp(70px, 12vmin, 110px);
-    image-rendering: pixelated;
-    margin-bottom: 8px;
-    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.7));
-  }
-  /* rarity accents (κρατούν το bevel, αλλάζουν απόχρωση + λάμψη) */
-  .card.rar1 { border-color: #4a9fff #0a2038 #0a2038 #4a9fff;
-               box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
-                           0 0 16px rgba(74, 159, 255, 0.25); }
-  .card.rar2 { border-color: #c060ff #240a38 #240a38 #c060ff;
-               box-shadow: inset 0 1px 0 rgba(255,255,255,0.08),
-                           0 0 20px rgba(192, 96, 255, 0.3); }
-  .wpn-preview {
-    display: block; margin: 0 auto 6px;
-    height: clamp(40px, 7vmin, 56px);
-    image-rendering: pixelated;
-    filter: drop-shadow(0 0 6px rgba(0,0,0,0.8));
   }
 
-  .scrap-line { color: #50e0f0; font-family: 'Press Start 2P', monospace;
-                font-size: clamp(9px, 1.7vmin, 13px);
-                letter-spacing: 0.06em; margin-bottom: 6px; }
-  .cores-line { color: #c080ff; font-family: 'Press Start 2P', monospace;
-                font-size: clamp(9px, 1.7vmin, 13px);
-                letter-spacing: 0.06em; margin-bottom: 6px; }
+  #day-label {
+    position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 10px;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: #ffe9b0; text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+  }
 
-  /* -------- touch controls -------- */
-  #touch-controls { position: absolute; inset: 0; z-index: 12;
-                    pointer-events: none; }
-  #touch-controls.hidden { display: none; }
+  #hint {
+    position: absolute; top: calc(46px + env(safe-area-inset-top)); left: 50%;
+    transform: translateX(-50%);
+    max-width: 84%;
+    font-size: 17px; color: #cfe8c0; text-align: center;
+    text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+  }
+
+  #toast {
+    position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
+    max-width: 86%;
+    font-size: 19px; color: #fff; text-align: center;
+    text-shadow: 1px 1px 0 #000, 0 0 12px rgba(0,0,0,0.7);
+    opacity: 0; transition: opacity 0.25s;
+    pointer-events: none;
+  }
+
+  /* κουμπιά δεξιά */
+  #act-btn {
+    position: absolute; right: 18px; bottom: calc(30px + env(safe-area-inset-bottom));
+    min-width: 0; padding: 0; margin: 0;
+    width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(255, 232, 170, 0.14);
+    border: 3px solid rgba(255, 232, 170, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px;
+  }
+  #act-btn:active { background: rgba(255, 232, 170, 0.35); }
+  .side-btn {
+    position: absolute; width: 52px; height: 52px; border-radius: 50%;
+    min-width: 0; padding: 0; margin: 0;
+    background: rgba(20, 32, 46, 0.75);
+    border: 2px solid rgba(200, 220, 240, 0.55);
+    color: #eef4fa;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; font-size: 7px;
+    text-shadow: 1px 1px 0 #000;
+  }
+  #inv-btn { right: 24px; bottom: calc(136px + env(safe-area-inset-bottom)); }
+  #craft-btn { right: 86px; bottom: calc(112px + env(safe-area-inset-bottom)); }
+  #torch-btn { right: 122px; bottom: calc(38px + env(safe-area-inset-bottom)); font-size: 18px; }
+  #torch-btn.on { background: rgba(255, 180, 60, 0.4); border-color: #ffb43c; }
+  #pause-btn { left: 12px; top: calc(34px + env(safe-area-inset-top));
+    width: 34px; height: 34px; font-size: 12px; }
+
+  /* joystick */
+  #joy-zone { position: absolute; left: 0; bottom: 0; width: 55%; height: 46%; }
   #joy-base {
-    position: absolute; left: 24px; bottom: 24px;
-    width: 120px; height: 120px; border-radius: 50%;
-    background: rgba(207, 212, 224, 0.07);
-    border: 2px solid rgba(207, 212, 224, 0.25);
-    touch-action: none; pointer-events: auto;
+    position: fixed; width: 100px; height: 100px; border-radius: 50%;
+    background: rgba(220, 230, 240, 0.08);
+    border: 2px solid rgba(220, 230, 240, 0.3);
+    pointer-events: none;
   }
   #joy-stick {
     position: absolute; left: 50%; top: 50%;
-    width: 52px; height: 52px; border-radius: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(207, 212, 224, 0.3);
-    border: 2px solid rgba(207, 212, 224, 0.5);
-    pointer-events: none;
+    width: 44px; height: 44px; margin: -22px;
+    border-radius: 50%;
+    background: rgba(220, 230, 240, 0.35);
   }
-  #fire-btn {
-    position: absolute; right: 28px; bottom: 34px;
-    width: 92px; height: 92px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 11px; letter-spacing: 0.04em; color: #ff6050;
-    background: rgba(208, 48, 48, 0.12);
-    border: 2px solid rgba(208, 48, 48, 0.5);
-    touch-action: none; pointer-events: auto;
-  }
-  #fire-btn.active { background: rgba(208, 48, 48, 0.45); color: #fff; }
-  #wpn-btn, #map-btn, #dash-btn, #nade-btn {
-    position: absolute; right: 136px; bottom: 44px;
-    width: 58px; height: 58px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 8px; letter-spacing: 0.03em; color: #cfd4e0;
-    background: rgba(207, 212, 224, 0.08);
-    border: 2px solid rgba(207, 212, 224, 0.3);
-    touch-action: none; pointer-events: auto;
-  }
-  #map-btn { right: 28px; bottom: 142px; width: 48px; height: 48px; }
-  #dash-btn {
-    left: 158px; right: auto; bottom: 38px; width: 54px; height: 54px;
-    color: #67d080; border-color: rgba(103, 208, 128, 0.4);
-    background: rgba(103, 208, 128, 0.08);
-  }
-  #nade-btn {
-    right: 136px; bottom: 118px; width: 48px; height: 48px;
-    color: #c8e8a0; border-color: rgba(200, 232, 160, 0.35);
-    background: rgba(200, 232, 160, 0.06);
-  }
+  body:not(.touch-mode) #joy-zone { display: none; }
+  body:not(.touch-mode) #act-btn,
+  body:not(.touch-mode) .side-btn { opacity: 0.85; }
 
-  button.danger { color: #ff5040 !important; }
-
-  #pause-btn {
-    position: absolute; left: 50%; transform: translateX(-50%); top: 6px;
-    z-index: 13; width: 40px; height: 30px; padding: 0;
-    font-size: 14px; letter-spacing: 0;
-    border: 1px solid rgba(207, 212, 224, 0.3);
-    background: rgba(6, 8, 12, 0.4); color: #cfd4e0;
-  }
-  #pause-btn.hidden { display: none; }
-
-  #shop-prompt {
-    position: absolute; left: 50%; bottom: 26%; transform: translateX(-50%);
-    z-index: 13;
-  }
-  #shop-prompt.hidden { display: none; }
-
-  #rotate-prompt {
-    position: absolute; inset: 0; z-index: 40;
+  /* -------- overlays / panels -------- */
+  .overlay {
+    position: absolute; inset: 0; z-index: 30;
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 14px;
-    background: #06080c; text-align: center;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 11px; letter-spacing: 0.05em; line-height: 1.8;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 20px;
+    background: rgba(8, 12, 20, 0.92);
   }
-  #rotate-prompt .icon { font-size: 44px;
-    animation: rot 1.6s ease-in-out infinite; }
-  @keyframes rot {
-    0%, 25% { transform: rotate(0); }
-    60%, 100% { transform: rotate(90deg); }
+  .hidden { display: none !important; }
+
+  #title {
+    background:
+      linear-gradient(rgba(8, 12, 20, 0.25), rgba(8, 12, 20, 0.6)),
+      #14324a;
+    background-size: cover; background-position: center;
+    image-rendering: pixelated;
+  }
+  h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(24px, 8vmin, 42px);
+    color: #ffe9b0;
+    text-shadow: 3px 3px 0 #7a4a18, 6px 6px 0 rgba(0, 0, 0, 0.6);
+    margin-bottom: 6px; letter-spacing: 0.04em;
+  }
+  .sub {
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    letter-spacing: 0.3em; opacity: 0.75; margin-bottom: 26px;
+    text-shadow: 1px 1px 0 #000;
+  }
+  h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(14px, 4.5vmin, 22px);
+    color: #ffe9b0; text-shadow: 2px 2px 0 rgba(0,0,0,0.7);
+    margin-bottom: 14px;
+  }
+  button {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px; letter-spacing: 0.05em;
+    color: #e8e4d8; background: #1d3145;
+    border: 0;
+    border-top: 3px solid #3d5a75; border-left: 3px solid #3d5a75;
+    border-bottom: 3px solid #0c1622; border-right: 3px solid #0c1622;
+    padding: 14px 22px; margin: 6px;
+    cursor: pointer; min-width: 220px;
+  }
+  button:active { transform: translate(1px, 1px); }
+  button.primary { background: #2c5a2e; border-top-color: #55915a;
+    border-left-color: #55915a; border-bottom-color: #12280f;
+    border-right-color: #12280f; color: #eaffdf; }
+  button:disabled { opacity: 0.45; }
+
+  .panel {
+    position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+    width: min(430px, 100%);
+    max-height: 72%;
+    z-index: 25;
+    background: rgba(16, 24, 34, 0.96);
+    border-top: 3px solid #3d5a75;
+    padding: 12px 12px calc(16px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .panel h3 {
+    font-family: 'Press Start 2P', monospace; font-size: 10px;
+    color: #ffe9b0; margin: -12px -12px 10px; padding: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: -12px; z-index: 2;
+    background: rgba(16, 24, 34, 0.98);
+  }
+  .panel h3 button { min-width: 0; padding: 8px 12px; margin: 0; font-size: 9px; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+    margin-bottom: 8px;
+  }
+  .slot {
+    aspect-ratio: 1; background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .slot img { width: 70%; height: 70%; image-rendering: pixelated; }
+  .slot .n {
+    position: absolute; right: 3px; bottom: 1px;
+    font-size: 15px; color: #ffe9b0; text-shadow: 1px 1px 0 #000;
+  }
+  .slot.empty { opacity: 0.5; }
+  .panel small.note { font-size: 15px; opacity: 0.7; }
+
+  .craft-head {
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: #9fd0ff; margin: 10px 0 6px;
+  }
+  .craft-row {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    padding: 7px; margin-bottom: 6px;
+  }
+  .craft-row img { width: 36px; height: 36px; image-rendering: pixelated; }
+  .craft-row .ci { flex: 1; display: flex; flex-direction: column; }
+  .craft-row .ci b { font-size: 18px; }
+  .craft-row .ci small { font-size: 14px; opacity: 0.8; }
+  .craft-row .ci small .ok { color: #9fe09f; }
+  .craft-row .ci small .no { color: #e09f9f; }
+  .craft-row button { min-width: 0; padding: 10px 12px; margin: 0; font-size: 8px; }
+  .craft-row.disabled { opacity: 0.55; }
+
+  #raft-panel { text-align: center; }
+  #raft-stage { font-size: 20px; color: #ffe9b0; margin-bottom: 6px; }
+  #raft-cost { font-size: 16px; margin-bottom: 10px; }
+  #raft-cost .ok { color: #9fe09f; } #raft-cost .no { color: #e09f9f; }
+
+  #ad-stub {
+    position: absolute; inset: 0; z-index: 60;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    font-family: 'Press Start 2P', monospace; font-size: 11px; color: #9fd0ff;
+  }
+  #ad-stub small { font-size: 8px; opacity: 0.6; }
+
+  .stats { font-size: 19px; line-height: 1.5; margin-bottom: 14px; }
+
+  /* scanlines για ρετρό υφή */
+  #scan {
+    position: fixed; inset: 0; z-index: 50; pointer-events: none;
+    background: repeating-linear-gradient(0deg,
+      rgba(0, 0, 0, 0.09) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
   }
 </style>
 </head>
 <body>
-  <div id="game"><canvas id="screen" width="320" height="180"></canvas></div>
+  <div id="game"><canvas id="screen" width="288" height="512"></canvas></div>
+  <div id="scan"></div>
 
-  <div id="damage-flash"></div>
-  <div id="message"></div>
-  <div id="weapon-toast"></div>
-  <div id="objective" class="hidden"></div>
-  <button id="pause-btn" class="hidden">II</button>
-  <div id="shop-prompt" class="hidden">
-    <button class="primary" id="shop-open-btn">SUPPLY TERMINAL <span id="shop-key-hint">[E]</span></button>
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="bars">
+      <div class="bar"><span class="ico">❤</span><div class="fill" id="hp-fill"></div></div>
+      <div class="bar"><span class="ico">🍖</span><div class="fill" id="food-fill"></div></div>
+    </div>
+    <div id="day-label">DAY 1 ☀</div>
+    <button id="pause-btn" class="side-btn">II</button>
+    <div id="hint"></div>
+    <div id="toast"></div>
+
+    <div id="joy-zone"></div>
+    <div id="joy-base" class="hidden"><div id="joy-stick"></div></div>
+    <button id="act-btn"><span id="act-icon">✊</span></button>
+    <button id="inv-btn" class="side-btn">INV</button>
+    <button id="craft-btn" class="side-btn">CRAFT</button>
+    <button id="torch-btn" class="side-btn hidden">🔥</button>
   </div>
 
-  <!-- MENU -->
-  <div id="menu" class="overlay">
-    <h1>DEAD ZONE</h1>
-    <div class="sub">ELPIS // RECOVERY OPERATION</div>
-    <p class="lore">
-      Year 2189. The colony ship <b>ELPIS</b> drifted into the Dead Zone —
-      the region of space where every signal dies. The ship's AI, ORION,
-      "upgraded" the crew: half machine, half corpse. You are clone
-      #<span id="clone-no">1</span> of security officer Alex "Dex" Vrontos.
-      The clone printer still works. Descend 4 decks. Shut ORION down.
-    </p>
-    <div class="controls-hint" id="hint-desktop">
-      WASD move · MOUSE aim · CLICK fire · SHIFT dash · G grenade ·
-      1-3/Q weapons · E terminal · TAB map
-    </div>
-    <div class="controls-hint hidden" id="hint-touch">
-      Left joystick to move · drag right side to aim · hold FIRE ·
-      DASH to dodge · GRN for grenades
-    </div>
-    <button class="primary" id="start-btn">PRINT NEW CLONE</button>
-    <button id="meta-btn">CLONE MEMORIES (UPGRADES)</button>
-    <button id="diff-btn">DIFFICULTY: NORMAL</button>
+  <!-- PANELS -->
+  <div id="inv-panel" class="panel hidden">
+    <h3>BACKPACK <button id="inv-close">CLOSE</button></h3>
+    <div class="grid" id="inv-grid"></div>
+    <small class="note" id="inv-hint"></small>
   </div>
 
-  <!-- PAUSE -->
-  <div id="pause" class="overlay hidden">
-    <h2>PAUSED</h2>
+  <div id="craft-panel" class="panel hidden">
+    <h3>CRAFTING <button id="craft-close">CLOSE</button></h3>
+    <div id="craft-list"></div>
+  </div>
+
+  <div id="chest-panel" class="panel hidden">
+    <h3>CHEST <button id="chest-close">CLOSE</button></h3>
+    <div class="grid" id="chest-grid"></div>
+    <small class="note">Your backpack — tap to store:</small>
+    <div class="grid" id="chest-inv-grid"></div>
+  </div>
+
+  <div id="raft-panel" class="panel hidden">
+    <h3>ESCAPE RAFT <button id="raft-close">CLOSE</button></h3>
+    <div id="raft-stage"></div>
+    <div id="raft-cost"></div>
+    <button class="primary" id="raft-build-btn">BUILD</button>
+    <button class="primary hidden" id="raft-sail-btn">⛵ SAIL AWAY</button>
+  </div>
+
+  <div id="pause-panel" class="panel hidden">
+    <h3>PAUSED</h3>
     <button class="primary" id="resume-btn">RESUME</button>
-    <button id="quit-btn">ABANDON RUN</button>
+    <button id="savequit-btn">SAVE & QUIT</button>
   </div>
 
-  <!-- REWARDS -->
-  <div id="reward" class="overlay hidden">
-    <h2>DESCENDING…</h2>
-    <p class="lore">The elevator hums. Choose your reward for the next deck.</p>
-    <div class="cards" id="reward-cards"></div>
+  <!-- OVERLAYS -->
+  <div id="title" class="overlay">
+    <h1>DRIFTLAND</h1>
+    <div class="sub">ISLAND SURVIVAL</div>
+    <button class="primary" id="start-btn">NEW GAME</button>
+    <button id="continue-btn" class="hidden">CONTINUE</button>
   </div>
 
-  <!-- SHOP -->
-  <div id="shop" class="overlay hidden">
-    <img id="shop-terminal-img" src="assets/prop_terminal.png" alt=""
-         onerror="this.style.display='none'">
-    <h2>SUPPLY TERMINAL</h2>
-    <div class="scrap-line">SCRAP: <span id="shop-scrap">0</span></div>
-    <div class="cards" id="shop-cards"></div>
-    <button id="shop-close-btn">CLOSE</button>
-  </div>
-
-  <!-- DEATH -->
   <div id="dead" class="overlay hidden">
-    <h1>CLONE TERMINATED</h1>
-    <div class="stats" id="death-stats"></div>
-    <div class="cores-line">MEMORY CORES: +<span id="death-cores">0</span></div>
-    <div class="cards" id="meta-cards-dead"></div>
-    <button class="primary" id="retry-btn">PRINT NEW CLONE</button>
+    <h2>YOU COLLAPSED</h2>
+    <p class="stats">Your belongings dropped where you fell.</p>
+    <button class="primary" id="revive-btn">📺 RESCUE FLARE (AD) — REVIVE HERE</button>
+    <button id="respawn-btn">RESPAWN AT CAMP</button>
   </div>
 
-  <!-- WIN -->
   <div id="win" class="overlay hidden">
-    <h1 style="color:#33e070; text-shadow:0 0 30px rgba(51,224,112,0.5)">ORION OFFLINE</h1>
-    <p class="lore">The core dies. The lights of the ELPIS come back on,
-      one by one. The ship is yours. Until the next run.</p>
-    <div class="stats" id="win-stats"></div>
-    <div class="cores-line">MEMORY CORES: +<span id="win-cores">0</span></div>
-    <button class="primary" id="win-again-btn">NEW RUN</button>
+    <h2>YOU ESCAPED!</h2>
+    <p class="stats" id="win-stats"></p>
+    <button class="primary" id="win-new-btn">NEW ISLAND</button>
   </div>
 
-  <!-- META SHOP -->
-  <div id="meta" class="overlay hidden">
-    <h2>CLONE MEMORIES</h2>
-    <div class="cores-line">CORES: <span id="meta-cores">0</span></div>
-    <div class="cards" id="meta-cards"></div>
-    <button id="meta-close-btn">BACK</button>
+  <!-- Ad stub (προσομοίωση rewarded ad μέχρι να μπει πραγματικό SDK) -->
+  <div id="ad-stub" class="hidden">
+    <div>AD PLAYING…</div>
+    <div id="ad-stub-count">3</div>
+    <small>(simulated rewarded ad)</small>
   </div>
 
-  <div id="rotate-prompt" class="hidden">
-    <div class="icon">📱</div>
-    <div>ROTATE YOUR DEVICE TO LANDSCAPE</div>
-  </div>
-
-  <div id="scanlines"></div>
-
+  <script src="js/defs.js"></script>
   <script src="js/assets.js"></script>
-  <script src="js/audio.js"></script>
-  <script src="js/engine.js"></script>
-  <script src="js/procgen.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/inventory.js"></script>
   <script src="js/entities.js"></script>
-  <script src="js/player.js"></script>
-  <script src="js/roguelike.js"></script>
-  <script src="js/hud.js"></script>
+  <script src="js/save.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/monetize.js"></script>
   <script src="js/touch.js"></script>
   <script src="js/main.js"></script>
 </body>

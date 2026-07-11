@@ -1,6 +1,6 @@
 {
-  "appId": "gr.happyonline.deadzone",
-  "appName": "ΝΕΚΡΗ ΖΩΝΗ",
+  "appId": "gr.happyonline.driftland",
+  "appName": "DRIFTLAND",
   "webDir": "www",
   "android": {
     "allowMixedContent": false

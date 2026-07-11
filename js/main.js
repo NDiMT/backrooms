@@ -1,4 +1,5 @@
-/* DEAD ZONE — main loop, game states, input, run manager. */
+/* DRIFTLAND — main: loop, καταστάσεις, αλληλεπίδραση, φωτισμός,
+   spawns, tutorial hints, save, θάνατος/αναγέννηση, νίκη. */
 
 (() => {
   const $ = id => document.getElementById(id);
@@ -6,722 +7,952 @@
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
 
-  const W = Engine.W, H = Engine.H;
+  const VW = 288, VH = 512;      // εσωτερική ανάλυση (portrait 9:16)
+  const TS = World.TS;
+  const T = Defs.T;
 
-  // ---------- canvas scaling ----------
   function fitCanvas() {
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const scale = Math.min(vw / W, vh / H);
-    canvas.style.width = (W * scale) + 'px';
-    canvas.style.height = (H * scale) + 'px';
-    if (TouchControls.isTouch) {
-      $('rotate-prompt').classList.toggle('hidden', vw >= vh);
-    } else {
-      $('rotate-prompt').classList.add('hidden');
-    }
+    const s = Math.min(window.innerWidth / VW, window.innerHeight / VH);
+    canvas.style.width = (VW * s) + 'px';
+    canvas.style.height = (VH * s) + 'px';
   }
   window.addEventListener('resize', fitCanvas);
-  window.addEventListener('orientationchange', fitCanvas);
   fitCanvas();
 
-  // ---------- deck themes ----------
-  const THEMES = [
-    { idx: 0, floor: '#2c3444', ceil: '#1a202c' },
-    { idx: 1, floor: '#3a2820', ceil: '#221610' },
-    { idx: 2, floor: '#243428', ceil: '#141f16' },
-    { idx: 3, floor: '#231b30', ceil: '#120d1c' },
-  ];
-
   // ---------- state ----------
-  let state = 'MENU';   // MENU|PLAY|PAUSE|REWARD|SHOP|DEAD|WIN|META
-  let meta = Rogue.loadMeta();
+  let state = 'TITLE';   // TITLE | PLAY | DEAD | WIN
+  let panel = null;      // null | 'inv' | 'craft' | 'chest' | 'raft' | 'pause'
+  let pendingBuild = null;
+  let openChest = null;
 
   const game = {
     audio: GameAudio,
-    player: null,
     world: null,
-    enemies: [],
-    projectiles: [],
-    pickups: [],
-    deckIdx: 0,
-    seed: 0,
-    kills: 0,
-    scrapEarned: 0,
-    dmgDealt: 0,
-    elapsed: 0,
-    wardenDead: false,
-    showMap: false,
-    shakeT: 0,
-    vampHeal: 0,
-    lastMoveX: 0,
-    lastMoveY: 0,
+    player: null,
+    mobs: [],
+    drops: [],
+    fx: [],
+    time: 0,           // δευτ. μέσα στον κύκλο
+    day: 1,
+    raftStage: 0,
+    stats: { kills: 0, gathered: 0, crafted: 0, days: 1 },
+    flags: {},
 
-    shake(t) { this.shakeT = Math.max(this.shakeT, t); },
-
-    alertEnemies(x, y, r) {
-      for (const e of this.enemies) {
-        if (e.state === 'idle' &&
-            Math.hypot(e.x - x, e.y - y) < r) e.state = 'chase';
-      }
+    isDay() { return this.time < T.DAY_LEN; },
+    nightAmount() {
+      const t = this.time;
+      if (t < T.DAY_LEN - 12) return 0;
+      if (t < T.DAY_LEN) return (t - (T.DAY_LEN - 12)) / 12;
+      const total = T.DAY_LEN + T.NIGHT_LEN;
+      if (t > total - 12) return 1 - (t - (total - 12)) / 12;
+      return 1;
     },
 
-    registerHit(e, dmg, element) {
-      e.hurt(dmg, this);
-      this.dmgDealt += dmg;
-      GameAudio.hitMarker();
-      HUD.hitmarker();
-      HUD.addDamage(Math.round(dmg), element);
-    },
-
-    /* Έκρηξη περιοχής (βαρέλια, boomers, χειροβομβίδες μέσω splash). */
-    explodeAt(x, y, dmg, r, source) {
-      GameAudio.explosion();
-      this.shake(0.45);
-      for (const e of this.enemies) {
-        if (!e.alive() || e === source) continue;
-        const d = Math.hypot(e.x - x, e.y - y);
-        if (d < r) {
-          const dealt = dmg * Math.max(0.35, 1 - d / r);
-          this.dmgDealt += dealt;
-          e.hurt(dealt, this);
-        }
-      }
+    nearLight(x, y) {
       const p = this.player;
-      const pd = Math.hypot(p.x - x, p.y - y);
-      if (pd < r * 0.9) {
-        this.hurtPlayer(dmg * 0.5 * Math.max(0.3, 1 - pd / r), source);
+      if (p.torchLit && Math.hypot(p.x - x, p.y - y) < 3.2) return true;
+      for (const [k, pr] of this.world.props) {
+        if (pr.kind !== 'campfire') continue;
+        const [px, py] = k.split(',').map(Number);
+        if (Math.hypot(px + 0.5 - x, py + 0.5 - y) < T.LIGHT_CAMPFIRE) return true;
       }
+      return false;
     },
 
-    /* Ο boss καλεί ενισχύσεις στο 50% HP. */
-    spawnBossAdds(b) {
-      for (const t of ['drone', 'drone', 'boomer']) {
-        let x = b.x, y = b.y;   // fallback: πάνω στον boss
-        for (let tries = 0; tries < 14; tries++) {
-          const a = Math.random() * Math.PI * 2;
-          const r = 1.0 + tries * 0.25;
-          const tx = b.x + Math.cos(a) * r, ty = b.y + Math.sin(a) * r;
-          if (!Procgen.blocked(this.world, tx, ty, 0.32)) { x = tx; y = ty; break; }
-        }
-        const e = new Entities.Enemy(t, x, y);
-        e.state = 'chase';
-        this.enemies.push(e);
-      }
-      showMessage('ORION SUMMONS REINFORCEMENTS!', 2500);
-      GameAudio.bossRoar();
+    dropItem(item, n, x, y) {
+      this.drops.push(new Entities.Drop(item, n, x, y));
     },
+    spawnPuff(x, y) {
+      this.fx.push({ kind: 'puff', x, y, t: 0 });
+    },
+    spawnHitFx(x, y, k) {
+      this.fx.push({ kind: 'hit', x, y, t: 0 });
+    },
+    markDirty(x, y) { World.invalidate(x, y); },
 
-    onEnemyDeath(e) {
-      if (e.stats.barrel) return;   // τα βαρέλια δεν μετράνε ως kills/loot
-      this.kills++;
+    hurtPlayer(dmg, src) {
       const p = this.player;
-      if (p.perks.vamp) p.hp = Math.min(p.maxHp, p.hp + p.perks.vamp);
-      const wst = PlayerSys.stats(PlayerSys.weapon(p), p.perks);
-      if (wst.vamp) p.hp = Math.min(p.maxHp, p.hp + wst.vamp);
-
-      // scrap drops (elites δίνουν x2.5, hard mode +30%)
-      const amount = Math.round(e.stats.scrap * p.perks.scrapMul *
-        (e.scrapMul || 1) * (meta.hard ? 1.3 : 1));
-      if (amount > 0) {
-        const pieces = (e.stats.elite || e.elite) ? 4 : 2;
-        for (let i = 0; i < pieces; i++) {
-          const pk = new Entities.Pickup('scrap',
-            e.x + (Math.random() - 0.5) * 0.7,
-            e.y + (Math.random() - 0.5) * 0.7);
-          pk.value = Math.ceil(amount / pieces);
-          this.pickups.push(pk);
-        }
-      }
-      if (!e.stats.boss && !e.stats.elite && Math.random() < 0.08) {
-        this.pickups.push(new Entities.Pickup('medkit', e.x, e.y));
-      }
-      if (e.elite && Math.random() < 0.4) {
-        this.pickups.push(new Entities.Pickup('nade', e.x, e.y));
-      }
-
-      if (e.type === 'warden') {
-        this.wardenDead = true;
-        openElevator();
-        showMessage('WARDEN DOWN — THE ELEVATOR IS OPEN. Follow the green sign.', 5000);
-        GameAudio.elevator();
-      }
-      if (e.type === 'boss') {
-        setTimeout(() => winRun(), 900);
-      }
-    },
-
-    hurtPlayer(amount, source) {
-      if (state !== 'PLAY') return;
-      const dead = PlayerSys.damage(this.player, amount);
-      HUD.notifyPain();
-      GameAudio.playerPain();
-      this.shake(0.25);
-      flashDamage();
-      if (dead) dieRun();
+      if (state !== 'PLAY' || p.hp <= 0) return;
+      p.hp -= dmg;
+      p.hurtT = 0.25;
+      GameAudio.playerHurt();
+      if (p.hp <= 0) die();
     },
   };
 
-  // ---------- μηνύματα / εφέ ----------
-  let msgTimer = null;
-  function showMessage(text, ms = 3000) {
-    const el = $('message');
+  // ---------- νέος παίκτης / παιχνίδι ----------
+  function freshPlayer(spawn) {
+    return {
+      x: spawn.x, y: spawn.y,
+      dir: 'south', faceLeft: false,
+      hp: T.PLAYER_HP, hunger: 100,
+      inv: Inv.create(),
+      spawn: { x: spawn.x, y: spawn.y },
+      animT: 0, moving: false,
+      attackCd: 0, hurtT: 0,
+      torchLit: false,
+    };
+  }
+
+  function newGame() {
+    SaveGame.clear();
+    game.world = World.generate((Math.random() * 0xffffffff) >>> 0);
+    game.player = freshPlayer(game.world.spawn);
+    game.mobs = []; game.drops = []; game.fx = [];
+    game.time = 20; game.day = 1;
+    game.raftStage = 0;
+    game.stats = { kills: 0, gathered: 0, crafted: 0, days: 1 };
+    game.flags = {};
+    World.invalidateAll();
+    Monetize.track('game_start', { new: true });
+    setState('PLAY');
+    toast('You wash ashore… Gather fiber and wood. Survive.');
+  }
+
+  function continueGame() {
+    const d = SaveGame.load();
+    if (!d) { newGame(); return; }
+    game.player = freshPlayer({ x: 0, y: 0 });
+    SaveGame.apply(game, d);
+    game.mobs = []; game.drops = []; game.fx = [];
+    Monetize.track('game_start', { new: false });
+    setState('PLAY');
+    toast('Day ' + game.day + ' — welcome back.');
+  }
+
+  // ---------- καταστάσεις / panels ----------
+  function setState(s) {
+    state = s;
+    $('title').classList.toggle('hidden', s !== 'TITLE');
+    $('dead').classList.toggle('hidden', s !== 'DEAD');
+    $('win').classList.toggle('hidden', s !== 'WIN');
+    $('hud').classList.toggle('hidden', s !== 'PLAY');
+    if (s !== 'PLAY') closePanel();
+    if (s === 'PLAY') Monetize.gameplayStart();
+    else Monetize.gameplayStop();
+  }
+
+  function openPanel(name) {
+    panel = name;
+    for (const id of ['inv-panel', 'craft-panel', 'chest-panel', 'raft-panel', 'pause-panel']) {
+      $(id).classList.add('hidden');
+    }
+    if (name) {
+      $(name + '-panel').classList.remove('hidden');
+      if (name === 'inv') renderInvPanel();
+      if (name === 'craft') renderCraftPanel();
+      if (name === 'chest') renderChestPanel();
+      if (name === 'raft') renderRaftPanel();
+    }
+  }
+  function closePanel() { panel = null; openPanel(null); }
+
+  let toastTimer = null;
+  function toast(text, ms = 3200) {
+    const el = $('toast');
     el.textContent = text;
     el.style.opacity = 1;
-    clearTimeout(msgTimer);
-    msgTimer = setTimeout(() => { el.style.opacity = 0; }, ms);
-  }
-  function flashDamage() {
-    const el = $('damage-flash');
-    el.style.opacity = 1;
-    setTimeout(() => { el.style.opacity = 0; }, 120);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.opacity = 0; }, ms);
   }
 
-  /* Toast ονόματος όπλου (εναλλαγή/απόκτηση). */
-  let wpnTimer = null;
-  function weaponToast() {
+  // ---------- εργαλεία / στόχευση ----------
+  function bestTool(kind) {
+    // kind: 'axe' | 'pickaxe' | 'weapon'
+    const item = Inv.firstTool(game.player.inv, kind);
+    return item ? { item, power: Defs.ITEMS[item].power } : null;
+  }
+
+  function facingTile() {
     const p = game.player;
-    const w = PlayerSys.weapon(p);
-    const el = $('weapon-toast');
-    el.textContent = PlayerSys.displayName(w) +
-      (w.rarity ? ' ' + '★'.repeat(w.rarity) : '');
-    el.style.color = w.element ? PlayerSys.ELEMENTS[w.element].color
-                               : PlayerSys.RARITIES[w.rarity].color;
-    el.style.opacity = 1;
-    clearTimeout(wpnTimer);
-    wpnTimer = setTimeout(() => { el.style.opacity = 0; }, 1400);
-  }
-  game.onWeaponSwitch = weaponToast;
-
-  // ---------- run / decks ----------
-  function newRun() {
-    meta.runs++;
-    Rogue.saveMeta(meta);
-    game.seed = Math.floor(Math.random() * 0xffffffff);
-    game.deckIdx = 0;
-    game.kills = 0;
-    game.scrapEarned = 0;
-    game.dmgDealt = 0;
-    game.elapsed = 0;
-    game.player = PlayerSys.create(meta);
-    if (meta.hard) game.player.perks.dmgTakenMul *= 1.2;
-    loadDeck();
-    setState('PLAY');
-    showMessage('CLONE #' + meta.runs + ' ONLINE. Find and kill the deck Warden.', 4500);
+    const d = { south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0] }[
+      p.faceLeft && p.dir === 'east' ? 'west' : p.dir];
+    return { x: Math.floor(p.x + d[0]), y: Math.floor(p.y + d[1]) };
   }
 
-  function loadDeck() {
-    const world = Procgen.generate(game.seed, game.deckIdx);
-    game.world = world;
-    game.player.x = world.playerStart.x;
-    game.player.y = world.playerStart.y;
-    game.player.angle = Math.random() * Math.PI * 2;
-    game.enemies = world.spawns.map(s => new Entities.Enemy(s.type, s.x, s.y));
-
-    // elites: τυχαία ενισχυμένοι εχθροί από το deck 2 και μετά
-    const eliteChance = game.deckIdx * 0.05 + (meta.hard ? 0.05 : 0);
-    const kinds = ['swift', 'juggernaut', 'leech'];
-    for (const e of game.enemies) {
-      if (e.stats.boss || e.stats.elite || e.stats.barrel) continue;
-      if (Math.random() < eliteChance) {
-        e.makeElite(kinds[(Math.random() * kinds.length) | 0]);
-      }
+  /* Τι θα κάνει το ACT τώρα; */
+  function findTarget() {
+    const p = game.player;
+    // 1. mob κοντά
+    let best = null, bd = 1.15;
+    for (const m of game.mobs) {
+      if (m.dead) continue;
+      const d = Math.hypot(m.x - p.x, m.y - p.y);
+      if (d < bd) { best = m; bd = d; }
     }
+    if (best) return { type: 'mob', mob: best };
 
-    // εκρηκτικά βαρέλια σε τυχαία σημεία
-    let placed = 0, tries = 0;
-    const wantBarrels = 4 + game.deckIdx * 2;
-    while (placed < wantBarrels && tries++ < 500) {
-      const gx = (Math.random() * Procgen.GRID) | 0;
-      const gy = (Math.random() * Procgen.GRID) | 0;
-      if (world.grid[gy][gx] !== Procgen.FLOOR) continue;
-      const cx = gx + 0.5, cy = gy + 0.5;
-      if (Math.hypot(cx - game.player.x, cy - game.player.y) < 4) continue;
-      if (world.terminals.some(t => Math.hypot(t.x - cx, t.y - cy) < 1.5)) continue;
-      game.enemies.push(new Entities.Enemy('barrel', cx, cy));
-      placed++;
+    // 2. prop στο facing tile ή στο tile του παίκτη
+    const f = facingTile();
+    for (const t of [f, { x: Math.floor(p.x), y: Math.floor(p.y) }]) {
+      const key = t.x + ',' + t.y;
+      const prop = game.world.props.get(key);
+      if (!prop) continue;
+      if (prop.kind === 'bush' && prop.looted) continue;
+      return { type: 'prop', key, prop, tx: t.x, ty: t.y };
     }
-
-    // hard mode: πιο σκληροί εχθροί
-    if (meta.hard) {
-      for (const e of game.enemies) {
-        if (!e.stats.barrel) { e.hp *= 1.35; e.maxHp = e.hp; }
-      }
+    // 3. raft spot
+    const rs = game.world.raftSpot;
+    if (Math.hypot(rs.x + 0.5 - p.x, rs.y + 0.5 - p.y) < 1.6) {
+      return { type: 'raft' };
     }
-    game.projectiles = [];
-    game.pickups = world.pickups.map(p =>
-      p.kind === 'weapon'
-        ? new Entities.Pickup('weapon', p.x, p.y,
-            Rogue.randomWeapon(game.deckIdx, Math.random))
-        : new Entities.Pickup(p.kind, p.x, p.y));
-    game.wardenDead = false;
-    $('objective').textContent = Rogue.DECK_NAMES[game.deckIdx] +
-      (game.deckIdx === 3 ? ' — DESTROY ORION' : ' — KILL THE WARDEN');
-    if (game.deckIdx === 3) GameAudio.bossRoar();
+    return null;
   }
 
-  function openElevator() {
-    for (const [, d] of game.world.doors) {
-      if (d.elevator) d.target = 1;
+  function actIconFor(tgt) {
+    if (pendingBuild) return '🔨';
+    if (!tgt) return '✊';
+    if (tgt.type === 'mob') return '🗡';
+    if (tgt.type === 'raft') return '⛵';
+    const k = tgt.prop.kind;
+    if (k === 'tree' || k === 'palm') return '🪓';
+    if (k === 'rock') return '⛏';
+    if (k === 'chest') return '📦';
+    if (k === 'bed') return '💤';
+    if (k === 'wreck') return '🔍';
+    return '✊';
+  }
+
+  function act() {
+    if (state !== 'PLAY' || panel) return;
+    const p = game.player;
+
+    // τοποθέτηση buildable
+    if (pendingBuild) {
+      placeBuild();
+      return;
     }
-  }
+    if (p.attackCd > 0) return;
+    p.attackCd = T.PLAYER_ATK_CD;
+    p.swingT = 0.18;
 
-  // ---------- κάρτες αμοιβών (perk ή όπλο) ----------
-  function weaponCardHTML(inst) {
-    const b = PlayerSys.BASES[inst.base];
-    const rar = PlayerSys.RARITIES[inst.rarity];
-    const el = inst.element ? PlayerSys.ELEMENTS[inst.element] : null;
-    const st = PlayerSys.stats(inst, null);
-    const img = Assets.weapons[b.map].idle;
-    // canvas → dataURL, ενώ τα PNG overrides είναι <img> με έτοιμο src
-    const imgSrc = img.toDataURL ? img.toDataURL() : img.src;
-    const details =
-      `DMG ${Math.round(st.dmg)}${st.pellets > 1 ? '×' + st.pellets : ''} · ` +
-      `${(1 / st.rate).toFixed(1)}/s` +
-      (st.pierce ? ' · PIERCING' : '') + (st.chain ? ' · CHAINS' : '') +
-      (st.splash ? ' · AOE' : '');
-    return `
-      <img class="wpn-preview" src="${imgSrc}" alt="">
-      <h3 style="color:${el ? el.color : rar.color}">${PlayerSys.displayName(inst)}</h3>
-      <p>${details}</p>
-      ${el ? `<p style="color:${el.color}">${el.desc}</p>` : ''}
-      <span class="cost" style="color:${rar.color}">${rar.name}${inst.rarity ? ' ' + '★'.repeat(inst.rarity) : ''}</span>`;
-  }
+    const tgt = findTarget();
+    if (!tgt) { GameAudio.swing(); gatherGrass(); return; }
 
-  function nextDeck() {
-    game.deckIdx++;
-    GameAudio.elevator();
-    const rewards = Rogue.pickRewards(game.deckIdx, Math.random);
-    const holder = $('reward-cards');
-    holder.innerHTML = '';
-    for (const r of rewards) {
-      const card = document.createElement('div');
-      if (r.kind === 'perk') {
-        card.className = 'card';
-        card.innerHTML = `<h3>${r.perk.name}</h3><p>${r.perk.desc}</p>
-          <span class="cost">PERK</span>`;
+    if (tgt.type === 'mob') {
+      const w = bestTool('weapon');
+      const dmg = w ? w.power : 2;
+      tgt.mob.hurt(dmg, game);
+      return;
+    }
+    if (tgt.type === 'raft') { openPanel('raft'); return; }
+
+    const K = tgt.prop.kind;
+    if (K === 'bag') {
+      for (const s of (tgt.prop.inv || [])) Inv.add(p.inv, s.item, s.n);
+      game.world.props.delete(tgt.key);
+      World.invalidate(tgt.tx, tgt.ty);
+      GameAudio.pickup();
+      toast('You recover your belongings.');
+      return;
+    }
+    if (K === 'chest') { openChest = tgt.prop; openPanel('chest'); return; }
+    if (K === 'bed') { trySleep(); return; }
+    if (K === 'wreck') {
+      if (!tgt.prop.looted) {
+        tgt.prop.looted = true;
+        Inv.add(p.inv, 'metal', 2);
+        Inv.add(p.inv, 'cloth', 2);
+        Inv.add(p.inv, 'rope', 1);
+        GameAudio.pickup();
+        toast('You salvage metal, cloth and rope from the wreck.');
+        game.flags.foundWreck = true;
       } else {
-        card.className = 'card rar' + r.inst.rarity;
-        card.innerHTML = weaponCardHTML(r.inst);
+        toast('The old wreck. Build your escape raft beside it.');
       }
-      card.addEventListener('click', () => {
-        if (r.kind === 'perk') {
-          r.perk.apply(game.player);
-          GameAudio.perk();
-        } else {
-          showMessage('ACQUIRED: ' + PlayerSys.giveWeapon(game.player, r.inst, game), 3000);
-          weaponToast();
-        }
-        loadDeck();
-        setState('PLAY');
-        showMessage(Rogue.DECK_NAMES[game.deckIdx], 3500);
-      });
-      holder.appendChild(card);
+      return;
     }
-    setState('REWARD');
+    if (K === 'bush' && !tgt.prop.looted) {
+      Entities.hitProp(game, tgt.key, p, 1, null);
+      collectNear();
+      return;
+    }
+    const toolKind = { tree: 'axe', palm: 'axe', rock: 'pickaxe' }[K];
+    const tool = toolKind ? bestTool(toolKind) : null;
+    Entities.hitProp(game, tgt.key, p, tool ? tool.power : T.HAND_POWER,
+      tool ? toolKind : null);
   }
 
-  function dieRun() {
-    GameAudio.playerDie();
-    const run = { deckIdx: game.deckIdx, kills: game.kills, won: false };
-    const cores = Math.round(Rogue.coresEarned(run) * (meta.hard ? 1.5 : 1));
-    meta.cores += cores;
-    meta.bestDeck = Math.max(meta.bestDeck, game.deckIdx + 1);
-    Rogue.saveMeta(meta);
-    $('death-stats').innerHTML =
-      `Reached: ${Rogue.DECK_NAMES[game.deckIdx]}${meta.hard ? ' · HARD' : ''}<br>` +
-      `Kills: ${game.kills} · Damage dealt: ${Math.round(game.dmgDealt)} · ` +
-      `Scrap: ${game.scrapEarned}<br>` +
-      `Time: ${fmtTime(game.elapsed)} · Seed: ${game.seed}`;
-    $('death-cores').textContent = cores;
-    renderMetaCards($('meta-cards-dead'));
-    setState('DEAD');
+  /* Fiber από γρασίδι με άδεια χέρια όταν δεν υπάρχει άλλος στόχος. */
+  function gatherGrass() {
+    const p = game.player;
+    const t = World.tileAt(game.world, p.x, p.y);
+    if (t === World.GRASS || t === World.JUNGLE) {
+      if (Math.random() < 0.6) {
+        Inv.add(p.inv, 'fiber', 1);
+        GameAudio.pickup();
+        game.flags.gotFiber = true;
+        toast('+1 fiber', 900);
+      }
+    }
   }
 
-  function winRun() {
-    GameAudio.win();
-    const run = { deckIdx: game.deckIdx, kills: game.kills, won: true };
-    const cores = Math.round(Rogue.coresEarned(run) * (meta.hard ? 1.5 : 1));
-    meta.cores += cores;
-    meta.wins++;
-    meta.bestDeck = 4;
-    Rogue.saveMeta(meta);
+  function collectNear() {
+    const p = game.player;
+    for (const d of game.drops) {
+      if (d.taken) continue;
+      if (Math.hypot(d.x - p.x, d.y - p.y) < 0.8) {
+        const left = Inv.add(p.inv, d.item, d.n);
+        if (left === 0) { d.taken = true; GameAudio.pickup(); }
+        else d.n = left;
+      }
+    }
+    game.drops = game.drops.filter(d => !d.taken);
+  }
+
+  // ---------- crafting / building ----------
+  function nearProp(kind, r) {
+    const p = game.player;
+    for (const [k, pr] of game.world.props) {
+      if (pr.kind !== kind) continue;
+      const [px, py] = k.split(',').map(Number);
+      if (Math.hypot(px + 0.5 - p.x, py + 0.5 - p.y) < r) return true;
+    }
+    return false;
+  }
+
+  function canCraft(rec) {
+    if (rec.tier >= 2 && !nearProp('workbench', 3)) return 'Needs workbench nearby';
+    if (rec.fire && !nearProp('campfire', 2.5)) return 'Needs campfire nearby';
+    if (!Inv.canAfford(game.player.inv, rec.cost)) return 'Missing materials';
+    return null;
+  }
+
+  function craft(rec) {
+    const err = canCraft(rec);
+    if (err) { GameAudio.error(); toast(err, 1600); return; }
+    Inv.pay(game.player.inv, rec.cost);
+    Inv.add(game.player.inv, rec.out, rec.n);
+    GameAudio.craft();
+    game.stats.crafted++;
+    game.flags['made_' + rec.out] = true;
+    Monetize.track('craft', { item: rec.out });
+    toast('Crafted: ' + Defs.ITEMS[rec.out].name, 1400);
+    renderCraftPanel();
+  }
+
+  function startBuild(b) {
+    if (b.tier >= 2 && !nearProp('workbench', 3)) {
+      GameAudio.error(); toast('Needs workbench nearby', 1600); return;
+    }
+    if (!Inv.canAfford(game.player.inv, b.cost)) {
+      GameAudio.error(); toast('Missing materials', 1600); return;
+    }
+    pendingBuild = b;
+    closePanel();
+    toast('Tap ACT on the highlighted spot to place ' + b.name, 2600);
+  }
+
+  function placeBuild() {
+    const f = facingTile();
+    const key = f.x + ',' + f.y;
+    const t = World.tileAt(game.world, f.x, f.y);
+    if (t <= World.WATER || game.world.props.get(key)) {
+      GameAudio.error(); toast("Can't build here", 1200); return;
+    }
+    if (!Inv.canAfford(game.player.inv, pendingBuild.cost)) {
+      GameAudio.error(); pendingBuild = null; return;
+    }
+    Inv.pay(game.player.inv, pendingBuild.cost);
+    const p = World.freshProp(pendingBuild.id);
+    p.hp = { campfire: 4, workbench: 6, wall: 8, chest: 4, bed: 4 }[pendingBuild.id] || 4;
+    if (pendingBuild.id === 'chest') p.inv = Array(12).fill(null);
+    game.world.props.set(key, p);
+    World.invalidate(f.x, f.y);
+    GameAudio.build();
+    game.flags['built_' + pendingBuild.id] = true;
+    Monetize.track('build', { item: pendingBuild.id });
+    if (pendingBuild.id === 'bed') {
+      game.player.spawn = { x: f.x + 0.5, y: f.y + 1.2 };
+      toast('Respawn point set.');
+    }
+    pendingBuild = null;
+  }
+
+  function trySleep() {
+    if (game.isDay()) { toast('You can only sleep at night.', 1800); return; }
+    GameAudio.sleep();
+    game.time = 10;                 // ξημέρωμα
+    game.day++;
+    game.stats.days = game.day;
+    game.player.hp = Math.min(T.PLAYER_HP, game.player.hp + 25);
+    game.mobs = game.mobs.filter(m => m.kind !== 'shade');
+    SaveGame.save(game);
+    toast('Day ' + game.day + '. You feel rested. (saved)');
+  }
+
+  // ---------- raft ----------
+  function buildRaftStage() {
+    const st = Defs.RAFT_STAGES[game.raftStage];
+    if (!st) return;
+    if (!Inv.canAfford(game.player.inv, st.cost)) {
+      GameAudio.error(); toast('Missing materials', 1500); return;
+    }
+    Inv.pay(game.player.inv, st.cost);
+    game.raftStage++;
+    GameAudio.raftBuild();
+    Monetize.track('raft_stage', { stage: game.raftStage });
+    toast(st.done);
+    SaveGame.save(game);
+    renderRaftPanel();
+  }
+
+  function sailAway() {
+    Monetize.track('win', { days: game.day, kills: game.stats.kills });
     $('win-stats').innerHTML =
-      `Kills: ${game.kills} · Damage dealt: ${Math.round(game.dmgDealt)} · ` +
-      `Time: ${fmtTime(game.elapsed)}${meta.hard ? ' · HARD' : ''} · Seed: ${game.seed}`;
-    $('win-cores').textContent = cores;
+      `Escaped on day <b>${game.day}</b><br>` +
+      `Kills: ${game.stats.kills} · Resources gathered: ${game.stats.gathered} · ` +
+      `Items crafted: ${game.stats.crafted}`;
+    GameAudio.win();
+    SaveGame.clear();
     setState('WIN');
   }
 
-  function fmtTime(s) {
-    return `${(s / 60) | 0}:${String((s | 0) % 60).padStart(2, '0')}`;
+  // ---------- θάνατος ----------
+  function die() {
+    GameAudio.playerDie();
+    const p = game.player;
+    // τα αντικείμενα πέφτουν σε σακίδιο στο σημείο θανάτου
+    const key = Math.floor(p.x) + ',' + Math.floor(p.y);
+    const bag = World.freshProp('bag');
+    bag.inv = p.inv.filter(Boolean);
+    if (bag.inv.length && !game.world.props.get(key)) {
+      game.world.props.set(key, bag);
+      World.invalidate(Math.floor(p.x), Math.floor(p.y));
+    } else if (bag.inv.length) {
+      for (const s of bag.inv) game.dropItem(s.item, s.n, p.x, p.y);
+    }
+    p.inv = Inv.create();
+    Monetize.track('death', { day: game.day });
+    setState('DEAD');
   }
 
-  // ---------- meta shop ----------
-  function renderMetaCards(holder) {
-    holder.innerHTML = '';
-    if ($('meta-cores')) $('meta-cores').textContent = meta.cores;
-    for (const up of Rogue.META_UPGRADES) {
-      const lvl = meta.upgrades[up.id] || 0;
-      const maxed = lvl >= up.max;
-      const cost = maxed ? null : up.cost(lvl);
-      const card = document.createElement('div');
-      card.className = 'card' + ((maxed || cost > meta.cores) ? ' disabled' : '');
-      card.innerHTML = `<h3>${up.name} ${up.max > 1 ? `(${lvl}/${up.max})` : (lvl ? '✓' : '')}</h3>
-        <p>${up.desc}</p>
-        <span class="cost">${maxed ? 'MAXED' : cost + ' CORES'}</span>`;
-      if (!maxed && cost <= meta.cores) {
-        card.addEventListener('click', () => {
-          meta.cores -= cost;
-          meta.upgrades[up.id] = lvl + 1;
-          Rogue.saveMeta(meta);
-          GameAudio.perk();
-          renderMetaCards(holder);
-          if (holder.id === 'meta-cards-dead') $('death-cores').textContent = '0';
-        });
+  $('revive-btn').addEventListener('click', () => {
+    Monetize.showRewarded('revive', () => {
+      const p = game.player;
+      p.hp = T.RESPAWN_HP;
+      p.hunger = Math.max(p.hunger, 40);
+      // παίρνει πίσω το σακίδιο αν είναι εδώ
+      const key = Math.floor(p.x) + ',' + Math.floor(p.y);
+      const bag = game.world.props.get(key);
+      if (bag && bag.kind === 'bag') {
+        for (const s of bag.inv) Inv.add(p.inv, s.item, s.n);
+        game.world.props.delete(key);
+        World.invalidate(Math.floor(p.x), Math.floor(p.y));
       }
-      holder.appendChild(card);
-    }
+      setState('PLAY');
+      toast('A rescue flare revives you!');
+    });
+  });
+  $('respawn-btn').addEventListener('click', () => {
+    const p = game.player;
+    p.hp = T.RESPAWN_HP; p.hunger = 70;
+    p.x = p.spawn.x; p.y = p.spawn.y;
+    setState('PLAY');
+    toast('You wake up… your things are where you fell.');
+  });
+
+  // ---------- tutorial hints ----------
+  function currentHint() {
+    const f = game.flags, p = game.player;
+    if (!f.gotFiber) return 'Stand on grass and tap ACT to gather fiber';
+    if (!f.made_axe) return 'Craft an axe (3 wood, 2 stone, 2 fiber)';
+    if (Inv.count(p.inv, 'wood') < 4 && !f.built_campfire) return 'Chop trees for wood';
+    if (!f.built_campfire) return 'Build a campfire before night falls';
+    if (!f.foundWreck) return 'Search the shipwreck on the beach';
+    if (game.raftStage === 0) return 'Start building the raft next to the wreck';
+    if (game.raftStage < 4) return 'Raft stage ' + (game.raftStage + 1) + '/4 — gather materials';
+    return 'The raft is ready — sail away!';
   }
 
-  // ---------- shop τερματικού ----------
-  let nearTerminal = false;
-  function renderShop() {
-    $('shop-scrap').textContent = game.player.scrap;
-    const holder = $('shop-cards');
-    holder.innerHTML = '';
-    for (const item of Rogue.shopItems(game.player, game)) {
-      const usable = item.can();
-      const affordable = game.player.scrap >= item.cost;
-      const card = document.createElement('div');
-      card.className = 'card' + ((!usable || !affordable) ? ' disabled' : '');
-      card.innerHTML = `<h3>${item.name}</h3><p>${item.desc}</p>
-        <span class="cost">${item.cost} SCRAP</span>`;
-      if (usable && affordable) {
-        card.addEventListener('click', () => {
-          game.player.scrap -= item.cost;
-          const msg = item.apply();
-          GameAudio.pickup();
-          if (msg) showMessage(msg, 2500);
-          renderShop();
-        });
-      }
-      holder.appendChild(card);
-    }
-  }
-
-  // ---------- καταστάσεις / overlays ----------
-  const OVERLAYS = ['menu', 'pause', 'reward', 'shop', 'dead', 'win', 'meta'];
-  function setState(s) {
-    state = s;
-    for (const id of OVERLAYS) $(id).classList.add('hidden');
-    const map = { MENU: 'menu', PAUSE: 'pause', REWARD: 'reward',
-                  SHOP: 'shop', DEAD: 'dead', WIN: 'win', META: 'meta' };
-    if (map[s]) $(map[s]).classList.remove('hidden');
-
-    const playing = s === 'PLAY';
-    if (playing) GameAudio.musicStart(game.deckIdx);
-    else if (s !== 'PAUSE' && s !== 'SHOP' && s !== 'REWARD') GameAudio.musicStop();
-    $('objective').classList.toggle('hidden', !playing);
-    if (playing && TouchControls.isTouch) {
-      TouchControls.show();
-      $('pause-btn').classList.remove('hidden');
-    } else {
-      TouchControls.hide();
-      $('pause-btn').classList.add('hidden');
-    }
-    if (!TouchControls.isTouch) {
-      if (playing) {
-        canvas.requestPointerLock && canvas.requestPointerLock();
-      } else if (document.pointerLockElement === canvas) {
-        // αλλιώς το lock «ρουφάει» τα clicks των overlays
-        document.exitPointerLock();
+  // ---------- spawns ----------
+  let spawnT = 0, shadeT = 0;
+  function updateSpawns(dt) {
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      spawnT = 5;
+      game.mobs = game.mobs.filter(m => !m.dead &&
+        Math.hypot(m.x - game.player.x, m.y - game.player.y) < 26);
+      const alive = game.mobs.filter(m => m.kind !== 'shade').length;
+      if (alive < 6) {
+        const a = Math.random() * Math.PI * 2;
+        const d = 9 + Math.random() * 4;
+        const x = game.player.x + Math.cos(a) * d;
+        const y = game.player.y + Math.sin(a) * d;
+        const t = World.tileAt(game.world, x, y);
+        if (t === World.SAND) game.mobs.push(new Entities.Mob('crab', x, y));
+        else if (t === World.GRASS || t === World.JUNGLE) {
+          game.mobs.push(new Entities.Mob(Math.random() < 0.6 ? 'boar' : 'crab', x, y));
+        }
       }
     }
-    if (!playing) $('shop-prompt').classList.add('hidden');
+    if (!game.isDay()) {
+      shadeT -= dt;
+      if (shadeT <= 0) {
+        shadeT = T.SHADE_SPAWN_EVERY;
+        const shades = game.mobs.filter(m => m.kind === 'shade' && !m.dead).length;
+        if (shades < T.SHADE_MAX) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 6 + Math.random() * 3;
+          const x = game.player.x + Math.cos(a) * d;
+          const y = game.player.y + Math.sin(a) * d;
+          if (World.tileAt(game.world, x, y) > World.WATER &&
+              !game.nearLight(x, y)) {
+            game.mobs.push(new Entities.Mob('shade', x, y));
+            GameAudio.shadeNear();
+          }
+        }
+      }
+    }
   }
 
   // ---------- input ----------
   const keys = {};
-  let mouseDown = false;
-
   document.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (state !== 'PLAY') return;
-    if (e.code === 'Tab') { e.preventDefault(); game.showMap = !game.showMap; }
-    if (e.code === 'KeyQ') PlayerSys.nextWeapon(game.player, game);
-    if (e.code === 'KeyE' && nearTerminal) { renderShop(); setState('SHOP'); }
-    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') doDash();
-    if (e.code === 'KeyG') PlayerSys.throwNade(game.player, game);
-    const idx = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
-    if (idx >= 0) PlayerSys.switchWeapon(game.player, idx, game);
+    if (e.code === 'KeyE' || e.code === 'Space') { e.preventDefault(); act(); }
+    if (e.code === 'KeyI') panel === 'inv' ? closePanel() : openPanel('inv');
+    if (e.code === 'KeyC') panel === 'craft' ? closePanel() : openPanel('craft');
+    if (e.code === 'KeyT') toggleTorch();
+    if (e.code === 'Escape') {
+      if (pendingBuild) { pendingBuild = null; toast('Build cancelled', 1000); }
+      else panel ? closePanel() : openPanel('pause');
+    }
   });
-
-  function doDash() {
-    if (state !== 'PLAY') return;
-    PlayerSys.dash(game.player, game, game.lastMoveX, game.lastMoveY);
-  }
   document.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  document.addEventListener('mousemove', e => {
-    if (state !== 'PLAY' || TouchControls.isTouch) return;
-    if (document.pointerLockElement !== canvas) return;
-    game.player.angle += e.movementX * 0.0028;
-  });
-  canvas.addEventListener('mousedown', () => {
-    if (state === 'PLAY' && !TouchControls.isTouch &&
-        document.pointerLockElement !== canvas) {
-      canvas.requestPointerLock();
-    }
-    mouseDown = true;
-  });
-  document.addEventListener('mouseup', () => { mouseDown = false; });
-
-  document.addEventListener('pointerlockchange', () => {
-    if (TouchControls.isTouch) return;
-    if (document.pointerLockElement !== canvas && state === 'PLAY') {
-      setState('PAUSE');
-    }
-  });
-
-  TouchControls.onWeaponSwitch = () => {
-    if (state === 'PLAY') PlayerSys.nextWeapon(game.player, game);
-  };
-  TouchControls.onMapToggle = () => { game.showMap = !game.showMap; };
-  TouchControls.onDash = doDash;
-  TouchControls.onNade = () => {
-    if (state === 'PLAY') PlayerSys.throwNade(game.player, game);
-  };
+  function toggleTorch() {
+    const p = game.player;
+    if (!Inv.firstTool(p.inv, 'light')) { toast('You need a torch', 1200); return; }
+    p.torchLit = !p.torchLit;
+    GameAudio.uiClick();
+  }
 
   // κουμπιά UI
-  $('start-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
-  $('resume-btn').addEventListener('click', () => setState('PLAY'));
-  $('quit-btn').addEventListener('click', () => setState('MENU'));
-  $('pause-btn').addEventListener('click', () => { if (state === 'PLAY') setState('PAUSE'); });
-  $('retry-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
-  $('win-again-btn').addEventListener('click', () => { GameAudio.start(); newRun(); });
-  $('meta-btn').addEventListener('click', () => {
-    renderMetaCards($('meta-cards'));
-    setState('META');
+  $('act-btn').addEventListener('pointerdown', e => { e.preventDefault(); act(); });
+  $('inv-btn').addEventListener('click', () => panel === 'inv' ? closePanel() : openPanel('inv'));
+  $('craft-btn').addEventListener('click', () => panel === 'craft' ? closePanel() : openPanel('craft'));
+  $('torch-btn').addEventListener('click', toggleTorch);
+  $('pause-btn').addEventListener('click', () => openPanel('pause'));
+  $('start-btn').addEventListener('click', () => { GameAudio.start(); newGame(); });
+  $('continue-btn').addEventListener('click', () => { GameAudio.start(); continueGame(); });
+  $('resume-btn').addEventListener('click', closePanel);
+  $('savequit-btn').addEventListener('click', () => {
+    SaveGame.save(game);
+    setState('TITLE');
+    refreshTitle();
   });
-  $('meta-close-btn').addEventListener('click', () => setState('MENU'));
-  const diffBtn = $('diff-btn');
-  function renderDiff() {
-    diffBtn.textContent = 'DIFFICULTY: ' + (meta.hard ? 'HARD' : 'NORMAL');
-    diffBtn.classList.toggle('danger', !!meta.hard);
+  $('win-new-btn').addEventListener('click', () => { newGame(); });
+  for (const id of ['inv-close', 'craft-close', 'chest-close', 'raft-close']) {
+    $(id).addEventListener('click', closePanel);
   }
-  if (diffBtn) {
-    renderDiff();
-    diffBtn.addEventListener('click', () => {
-      meta.hard = !meta.hard;
-      Rogue.saveMeta(meta);
-      GameAudio.uiClick();
-      renderDiff();
+
+  function refreshTitle() {
+    $('continue-btn').classList.toggle('hidden', !SaveGame.exists());
+    if (Assets.ui.titlebg) {
+      $('title').style.backgroundImage =
+        `linear-gradient(rgba(8,12,20,0.25), rgba(8,12,20,0.6)), url(${Assets.ui.titlebg.src})`;
+    }
+  }
+
+  // ---------- panels: inventory ----------
+  function renderInvPanel() {
+    const p = game.player;
+    const grid = $('inv-grid');
+    grid.innerHTML = '';
+    p.inv.forEach((s, i) => {
+      const d = document.createElement('div');
+      d.className = 'slot' + (s ? '' : ' empty');
+      if (s) {
+        const img = Assets.icons[s.item];
+        d.innerHTML = `<img src="${img.toDataURL ? img.toDataURL() : img.src}" alt="">` +
+          `<span class="n">${s.n > 1 ? s.n : ''}</span>`;
+        d.addEventListener('click', () => invAction(i));
+      }
+      grid.appendChild(d);
+    });
+    $('inv-hint').textContent = 'Tap food to eat · tools are used automatically';
+  }
+
+  function invAction(i) {
+    const p = game.player;
+    const s = p.inv[i];
+    if (!s) return;
+    const def = Defs.ITEMS[s.item];
+    if (def.food) {
+      s.n--;
+      if (s.n <= 0) p.inv[i] = null;
+      p.hunger = Math.min(100, p.hunger + def.food.hunger);
+      if (def.food.hp) p.hp = Math.min(T.PLAYER_HP, p.hp + def.food.hp);
+      if (def.food.poison && Math.random() < def.food.poison) {
+        p.hp = Math.max(1, p.hp - 6);
+        toast('Ugh… that raw meat was bad. Cook it next time!', 2200);
+      } else {
+        toast('+' + def.food.hunger + ' food', 900);
+      }
+      GameAudio.eat();
+      renderInvPanel();
+    } else {
+      toast(def.name + (def.tool ? ' — used automatically' : ''), 1200);
+    }
+  }
+
+  // ---------- panels: crafting ----------
+  function costHTML(cost) {
+    return Object.entries(cost).map(([item, n]) => {
+      const have = Inv.count(game.player.inv, item);
+      const ok = have >= n;
+      return `<span class="${ok ? 'ok' : 'no'}">${Defs.ITEMS[item].name} ${have}/${n}</span>`;
+    }).join(' · ');
+  }
+
+  function renderCraftPanel() {
+    const list = $('craft-list');
+    list.innerHTML = '';
+    const mk = (title) => {
+      const h = document.createElement('div');
+      h.className = 'craft-head';
+      h.textContent = title;
+      list.appendChild(h);
+    };
+    mk('CRAFT');
+    for (const rec of Defs.RECIPES) {
+      const err = canCraft(rec);
+      const row = document.createElement('div');
+      row.className = 'craft-row' + (err ? ' disabled' : '');
+      const img = Assets.icons[rec.out];
+      row.innerHTML =
+        `<img src="${img.toDataURL ? img.toDataURL() : img.src}" alt="">` +
+        `<div class="ci"><b>${Defs.ITEMS[rec.out].name}</b>` +
+        `<small>${rec.hint}</small><small>${costHTML(rec.cost)}</small></div>` +
+        `<button>${err && err !== 'Missing materials' ? '✕' : 'MAKE'}</button>`;
+      row.querySelector('button').addEventListener('click', () => craft(rec));
+      list.appendChild(row);
+    }
+    mk('BUILD');
+    for (const b of Defs.BUILDS) {
+      const afford = Inv.canAfford(game.player.inv, b.cost);
+      const needWb = b.tier >= 2 && !nearProp('workbench', 3);
+      const row = document.createElement('div');
+      row.className = 'craft-row' + ((!afford || needWb) ? ' disabled' : '');
+      const img = Assets.props[b.id];
+      row.innerHTML =
+        `<img src="${img.toDataURL ? img.toDataURL() : img.src}" alt="">` +
+        `<div class="ci"><b>${b.name}</b>` +
+        `<small>${needWb ? 'Needs workbench nearby' : b.hint}</small>` +
+        `<small>${costHTML(b.cost)}</small></div>` +
+        `<button>PLACE</button>`;
+      row.querySelector('button').addEventListener('click', () => startBuild(b));
+      list.appendChild(row);
+    }
+  }
+
+  // ---------- panels: chest ----------
+  function renderChestPanel() {
+    if (!openChest) return;
+    const cg = $('chest-grid'), pg = $('chest-inv-grid');
+    cg.innerHTML = ''; pg.innerHTML = '';
+    openChest.inv.forEach((s, i) => {
+      const d = document.createElement('div');
+      d.className = 'slot' + (s ? '' : ' empty');
+      if (s) {
+        const img = Assets.icons[s.item];
+        d.innerHTML = `<img src="${img.toDataURL ? img.toDataURL() : img.src}">` +
+          `<span class="n">${s.n > 1 ? s.n : ''}</span>`;
+        d.addEventListener('click', () => {
+          Inv.add(game.player.inv, s.item, s.n);
+          openChest.inv[i] = null;
+          renderChestPanel();
+          GameAudio.uiClick();
+        });
+      }
+      cg.appendChild(d);
+    });
+    game.player.inv.forEach((s, i) => {
+      const d = document.createElement('div');
+      d.className = 'slot' + (s ? '' : ' empty');
+      if (s) {
+        const img = Assets.icons[s.item];
+        d.innerHTML = `<img src="${img.toDataURL ? img.toDataURL() : img.src}">` +
+          `<span class="n">${s.n > 1 ? s.n : ''}</span>`;
+        d.addEventListener('click', () => {
+          const j = openChest.inv.findIndex(x => !x);
+          if (j < 0) { toast('Chest is full', 1200); return; }
+          openChest.inv[j] = s;
+          game.player.inv[i] = null;
+          renderChestPanel();
+          GameAudio.uiClick();
+        });
+      }
+      pg.appendChild(d);
     });
   }
-  $('shop-open-btn').addEventListener('click', () => {
-    renderShop();
-    setState('SHOP');
-  });
-  $('shop-close-btn').addEventListener('click', () => setState('PLAY'));
 
-  if (TouchControls.isTouch) {
-    $('hint-desktop').classList.add('hidden');
-    $('hint-touch').classList.remove('hidden');
-    $('shop-key-hint').style.display = 'none';
+  // ---------- panels: raft ----------
+  function renderRaftPanel() {
+    const st = Defs.RAFT_STAGES[game.raftStage];
+    $('raft-stage').textContent = game.raftStage >= 4
+      ? 'THE RAFT IS COMPLETE'
+      : `Stage ${game.raftStage + 1} / 4 — ${st.label}`;
+    $('raft-cost').innerHTML = st ? costHTML(st.cost) : '';
+    $('raft-build-btn').classList.toggle('hidden', game.raftStage >= 4);
+    $('raft-sail-btn').classList.toggle('hidden', game.raftStage < 4);
+    $('raft-build-btn').disabled = st && !Inv.canAfford(game.player.inv, st.cost);
   }
-  $('clone-no').textContent = meta.runs + 1;
-
-  // φόρτωση PNG overrides από assets/ (AI-generated γραφικά, αν υπάρχουν)
-  Assets.loadOverrides(() => {});
-
-
-  // προφόρτωση pixel fonts ώστε να τα βλέπει και το canvas HUD
-  if (document.fonts && document.fonts.load) {
-    document.fonts.load('11px "Press Start 2P"');
-    document.fonts.load('10px VT323');
-  }
+  $('raft-build-btn').addEventListener('click', buildRaftStage);
+  $('raft-sail-btn').addEventListener('click', sailAway);
 
   // ---------- update ----------
+  let saveT = 0;
   function update(dt) {
     const p = game.player;
-    game.elapsed += dt;
 
-    // --- movement ---
-    let mx = 0, mz = 0;
-    if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
-    if (keys['KeyS'] || keys['ArrowDown']) mz -= 1;
-    if (keys['KeyA']) mx -= 1;
-    if (keys['KeyD']) mx += 1;
-    if (keys['ArrowLeft']) p.angle -= 2.4 * dt;
-    if (keys['ArrowRight']) p.angle += 2.4 * dt;
-    mx += TouchControls.state.move.x;
-    mz += TouchControls.state.move.z;
-    mx = Math.max(-1, Math.min(1, mx));
-    mz = Math.max(-1, Math.min(1, mz));
-
-    if (TouchControls.isTouch) {
-      p.angle += TouchControls.consumeLook() * 0.006;
+    // χρόνος
+    const wasDay = game.isDay();
+    game.time += dt;
+    if (game.time >= T.DAY_LEN + T.NIGHT_LEN) {
+      game.time = 0;
+      game.day++;
+      game.stats.days = game.day;
+      GameAudio.dawn();
+      toast('Day ' + game.day, 2000);
     }
-
-    const speed = 3.4 * p.perks.speedMul;
-    const moving = Math.abs(mx) > 0.05 || Math.abs(mz) > 0.05;
-    const fx = Math.cos(p.angle), fy = Math.sin(p.angle);
-    const rx = -fy, ry = fx;
-    if (moving) {
-      const len = Math.max(1, Math.hypot(mx, mz));
-      game.lastMoveX = (fx * mz + rx * mx) / len;
-      game.lastMoveY = (fy * mz + ry * mx) / len;
-      Procgen.move(game.world, p,
-        game.lastMoveX * speed * dt,
-        game.lastMoveY * speed * dt, p.radius);
-      p.bob += dt * 9;
-    } else {
-      game.lastMoveX = 0; game.lastMoveY = 0;
+    if (wasDay && !game.isDay()) {
+      GameAudio.nightFall();
+      toast('Night falls… stay near the light.', 2600);
     }
+    GameAudio.setNight(game.nightAmount());
 
-    // --- dash ---
-    p.dashCd = Math.max(0, p.dashCd - dt);
-    p.invulnT = Math.max(0, p.invulnT - dt);
-    if (p.dashT > 0) {
-      p.dashT -= dt;
-      Procgen.move(game.world, p,
-        p.dashDx * 14 * dt, p.dashDy * 14 * dt, p.radius);
-    }
+    // πείνα / hp
+    p.hunger = Math.max(0, p.hunger - T.HUNGER_DRAIN * dt);
+    if (p.hunger <= 0) p.hp -= T.STARVE_DPS * dt;
+    else if (p.hunger > 60 && p.hp < T.PLAYER_HP) p.hp += T.HP_REGEN * dt;
+    p.hp = Math.min(T.PLAYER_HP, p.hp);
+    if (p.hp <= 0 && state === 'PLAY') { die(); return; }
+    p.hurtT = Math.max(0, p.hurtT - dt);
+    p.attackCd = Math.max(0, p.attackCd - dt);
+    p.swingT = Math.max(0, (p.swingT || 0) - dt);
 
-    // --- fire ---
-    p.cool = Math.max(0, p.cool - dt);
-    p.fireAnim = Math.max(0, p.fireAnim - dt);
-    const wantFire = mouseDown || keys['Space'] || TouchControls.state.firing;
-    if (wantFire) {
-      PlayerSys.fire(p, game, TouchControls.isTouch ? 0.06 : 0);
-    }
-    // vamp από mods (μαζεύεται στο dealHit)
-    if (game.vampHeal) {
-      p.hp = Math.min(p.maxHp, p.hp + game.vampHeal);
-      game.vampHeal = 0;
-    }
-
-    // --- doors ---
-    for (const [key, d] of game.world.doors) {
-      const [dx, dy] = key.split(',').map(Number);
-      const near = Math.hypot(p.x - dx - 0.5, p.y - dy - 0.5) < 1.4;
-      if (!d.elevator) {
-        if (near) { if (d.target === 0) GameAudio.doorOpen(); d.target = 1; d.timer = 3; }
-        else if (d.timer > 0) { d.timer -= dt; if (d.timer <= 0) d.target = 0; }
-      }
-      d.open += Math.sign(d.target - d.open) * dt * 1.8;
-      d.open = Math.max(0, Math.min(1, d.open));
-    }
-
-    // --- elevator transition ---
-    if (game.world.elevator && game.wardenDead) {
-      const el = game.world.elevator;
-      if (Math.hypot(p.x - el.x, p.y - el.y) < 0.7) {
-        nextDeck();
-        return;
+    // κίνηση
+    if (!panel) {
+      let mx = 0, my = 0;
+      if (keys['KeyW'] || keys['ArrowUp']) my -= 1;
+      if (keys['KeyS'] || keys['ArrowDown']) my += 1;
+      if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+      mx += TouchControls.state.move.x;
+      my += TouchControls.state.move.y;
+      const len = Math.hypot(mx, my);
+      p.moving = len > 0.08;
+      if (p.moving) {
+        mx /= Math.max(1, len); my /= Math.max(1, len);
+        World.move(game.world, p, mx * 3.2 * dt, my * 3.2 * dt, 0.28);
+        p.animT += dt * 7;
+        if (Math.abs(mx) > Math.abs(my)) { p.dir = 'east'; p.faceLeft = mx < 0; }
+        else p.dir = my > 0 ? 'south' : 'north';
+        collectNear();
+        // fiber από γρασίδι: πατάς ACT χωρίς στόχο — βλ. act()
       }
     }
 
-    // --- enemies / projectiles ---
-    for (const e of game.enemies) e.update(dt, game);
-    if (state !== 'PLAY') return;
-    for (const pr of game.projectiles) pr.update(dt, game);
-    game.projectiles = game.projectiles.filter(pr => !pr.dead);
-
-    // --- pickups ---
-    for (const pk of game.pickups) {
-      if (pk.taken) continue;
-      pk.bob += dt * 3;
-      if (Math.hypot(pk.x - p.x, pk.y - p.y) > 0.55) continue;
-      pk.taken = true;
-      applyPickup(pk);
-    }
-    game.pickups = game.pickups.filter(pk => !pk.taken);
-
-    // --- terminals ---
-    nearTerminal = game.world.terminals.some(t =>
-      Math.hypot(t.x - p.x, t.y - p.y) < 1.3);
-    $('shop-prompt').classList.toggle('hidden', !nearTerminal);
-
-    game.shakeT = Math.max(0, game.shakeT - dt);
-  }
-
-  function applyPickup(pk) {
-    const p = game.player;
-    switch (pk.kind) {
-      case 'medkit':
-        if (p.hp >= p.maxHp) { pk.taken = false; return; }
-        p.hp = Math.min(p.maxHp, p.hp + 35);
-        break;
-      case 'rounds': p.ammo.rounds += 12; break;
-      case 'cells': p.ammo.cells += 20; break;
-      case 'nade':
-        if (p.nades >= p.perks.nadeCap) { pk.taken = false; return; }
-        p.nades = Math.min(p.perks.nadeCap, p.nades + 2);
-        break;
-      case 'scrap': {
-        const v = pk.value || 5;
-        p.scrap += v;
-        game.scrapEarned += v;
-        GameAudio.scrapPickup();
-        return;
-      }
-      case 'weapon': {
-        const msg = PlayerSys.giveWeapon(p, pk.inst, game);
-        HUD.notifyPickup();
-        weaponToast();
-        showMessage('ACQUIRED: ' + msg, 2800);
-        return;
+    // mobs / fx / regrow
+    for (const m of game.mobs) m.update(dt, game);
+    for (const f of game.fx) f.t += dt;
+    game.fx = game.fx.filter(f => f.t < 0.5);
+    for (const [k, pr] of game.world.props) {
+      if (pr.kind === 'bush' && pr.looted) {
+        pr.regrow -= dt;
+        if (pr.regrow <= 0) {
+          pr.looted = false;
+          const [px, py] = k.split(',').map(Number);
+          World.invalidate(px, py);
+        }
       }
     }
-    GameAudio.pickup();
-    HUD.notifyPickup();
-    const msg = Entities.PICKUP_DEFS[pk.kind].msg;
-    if (msg) showMessage(msg, 1600);
+
+    updateSpawns(dt);
+
+    // autosave
+    saveT += dt;
+    if (saveT > 12) { saveT = 0; SaveGame.save(game); }
+
+    // HUD
+    $('hp-fill').style.width = Math.max(0, p.hp) + '%';
+    $('food-fill').style.width = Math.max(0, p.hunger) + '%';
+    $('day-label').textContent = 'DAY ' + game.day + (game.isDay() ? ' ☀' : ' ☾');
+    $('hint').textContent = currentHint();
+    $('act-icon').textContent = actIconFor(findTarget());
+    $('torch-btn').classList.toggle('hidden', !Inv.firstTool(p.inv, 'light'));
+    $('torch-btn').classList.toggle('on', p.torchLit);
   }
 
   // ---------- render ----------
   let tick = 0;
+  const lightCv = document.createElement('canvas');
+  lightCv.width = VW; lightCv.height = VH;
+  const lctx = lightCv.getContext('2d');
+
+  function drawSprite(img, wx, wy, cam, scale = 1) {
+    const sx = Math.round(wx * TS - cam.x * TS + VW / 2);
+    const sy = Math.round(wy * TS - cam.y * TS + VH / 2);
+    ctx.drawImage(img, sx - (img.width * scale) / 2,
+      sy - img.height * scale, img.width * scale, img.height * scale);
+    return { sx, sy };
+  }
+
   function render(dt) {
     tick += dt;
-    ctx.save();
-    if (game.shakeT > 0) {
-      ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 3);
+    const p = game.player;
+    const cam = { x: p.x, y: p.y - 0.6 };
+
+    World.render(ctx, game.world, cam, VW, VH);
+
+    // drops
+    for (const d of game.drops) {
+      d.bob += dt * 3;
+      const img = Assets.icons[d.item];
+      const sx = Math.round(d.x * TS - cam.x * TS + VW / 2);
+      const sy = Math.round(d.y * TS - cam.y * TS + VH / 2 + Math.sin(d.bob) * 2);
+      ctx.drawImage(img, sx - 8, sy - 8, 16, 16);
     }
 
-    const theme = THEMES[game.deckIdx];
-    const sprites = [];
+    // depth-sorted: props + mobs + player
+    const order = [];
+    for (const [k, pr] of game.world.props) {
+      const [px, py] = k.split(',').map(Number);
+      order.push({ y: py + 1, draw: () => drawProp(pr, px, py, cam) });
+    }
+    // raft υπό κατασκευή (στο 0: αχνό περίγραμμα-στόχος)
+    const rs = game.world.raftSpot;
+    order.push({ y: rs.y + 1, draw: () => {
+      if (game.raftStage > 0) {
+        drawSprite(Assets.props['raft' + Math.min(4, game.raftStage)], rs.x + 0.5, rs.y + 1, cam);
+      } else {
+        ctx.globalAlpha = 0.35 + Math.sin(tick * 3) * 0.1;
+        drawSprite(Assets.props.raft1, rs.x + 0.5, rs.y + 1, cam);
+        ctx.globalAlpha = 1;
+      }
+    } });
+    for (const m of game.mobs) {
+      if (m.dead) continue;
+      order.push({ y: m.y, draw: () => {
+        const img = m.sprite();
+        const sx = Math.round(m.x * TS - cam.x * TS + VW / 2);
+        const sy = Math.round(m.y * TS - cam.y * TS + VH / 2);
+        ctx.save();
+        if (m.faceLeft) { ctx.translate(sx, 0); ctx.scale(-1, 1); ctx.translate(-sx, 0); }
+        ctx.drawImage(img, sx - img.width / 2, sy - img.height + 6);
+        if (m.flash > 0) {
+          ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = 'source-atop';
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+      } });
+    }
+    order.push({ y: p.y, draw: () => {
+      const frames = Assets.hero[p.dir] || Assets.hero.south;
+      const img = p.moving ? frames[(p.animT | 0) % frames.length] : frames[0];
+      const sx = Math.round(p.x * TS - cam.x * TS + VW / 2);
+      const sy = Math.round(p.y * TS - cam.y * TS + VH / 2);
+      ctx.save();
+      if (p.dir === 'east' && p.faceLeft) {
+        ctx.translate(sx, 0); ctx.scale(-1, 1); ctx.translate(-sx, 0);
+      }
+      if (p.hurtT > 0) ctx.globalAlpha = 0.6;
+      ctx.drawImage(img, sx - img.width / 2, sy - img.height + 8);
+      ctx.restore();
+      // swing κύκλος
+      if (p.swingT > 0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        const f = facingTile();
+        const fx = Math.round((f.x + 0.5) * TS - cam.x * TS + VW / 2);
+        const fy = Math.round((f.y + 0.5) * TS - cam.y * TS + VH / 2);
+        ctx.arc(fx, fy, 10 * (1 - p.swingT / 0.18) + 4, 0, 7);
+        ctx.stroke();
+      }
+    } });
+    order.sort((a, b) => a.y - b.y);
+    for (const o of order) o.draw();
 
-    for (const e of game.enemies) {
-      sprites.push({
-        x: e.x, y: e.y, img: e.sprite(tick),
-        worldH: e.state === 'dead' || e.state === 'dying'
-          ? e.stats.worldH * 0.5 : e.stats.worldH,
-        yOff: e.stats.fly || 0,
-        flash: e.flash > 0,
-        flashColor: e.statusFx || (e.elite && e.alive() ? e.elite.aura : null),
-      });
-    }
-    for (const pk of game.pickups) {
-      sprites.push({
-        x: pk.x, y: pk.y, img: pk.sprite(),
-        worldH: pk.def.worldH,
-        yOff: 0.05 + Math.sin(pk.bob) * 0.03,
-        bright: pk.kind === 'scrap' || pk.kind === 'core' || pk.kind === 'weapon',
-      });
-    }
-    for (const pr of game.projectiles) {
-      sprites.push({ x: pr.x, y: pr.y, img: pr.sprite(),
-                     worldH: 0.14, yOff: 0.4, bright: true });
-    }
-    for (const t of game.world.terminals) {
-      sprites.push({ x: t.x, y: t.y, img: Assets.props.terminal, worldH: 0.62 });
+    // ghost τοποθέτησης
+    if (pendingBuild) {
+      const f = facingTile();
+      const img = Assets.props[pendingBuild.id];
+      ctx.globalAlpha = 0.55;
+      drawSprite(img, f.x + 0.5, f.y + 1, cam);
+      ctx.globalAlpha = 1;
+      const sx = Math.round(f.x * TS - cam.x * TS + VW / 2);
+      const sy = Math.round(f.y * TS - cam.y * TS + VH / 2);
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(sx + 1, sy + 1, TS - 2, TS - 2);
     }
 
-    Engine.render(ctx, game.world, game.player, sprites, theme, tick);
-    HUD.weapon(ctx, game);
-    HUD.render(ctx, game, dt);
-    ctx.restore();
+    // fx
+    for (const f of game.fx) {
+      const sx = Math.round(f.x * TS - cam.x * TS + VW / 2);
+      const sy = Math.round(f.y * TS - cam.y * TS + VH / 2);
+      ctx.globalAlpha = 1 - f.t * 2;
+      if (f.kind === 'puff') {
+        ctx.fillStyle = '#e8e0cc';
+        for (let i = 0; i < 5; i++) {
+          const a = i / 5 * Math.PI * 2;
+          const r = f.t * 26;
+          ctx.beginPath();
+          ctx.arc(sx + Math.cos(a) * r, sy - 8 + Math.sin(a) * r, 3, 0, 7);
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(sx - 2 + Math.random() * 4, sy - 10 + Math.random() * 4, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ---- φωτισμός νύχτας ----
+    const night = game.nightAmount();
+    if (night > 0.01) {
+      lctx.clearRect(0, 0, VW, VH);
+      lctx.fillStyle = `rgba(8, 10, 34, ${0.78 * night})`;
+      lctx.fillRect(0, 0, VW, VH);
+      lctx.globalCompositeOperation = 'destination-out';
+      const hole = (wx, wy, r) => {
+        const sx = wx * TS - cam.x * TS + VW / 2;
+        const sy = wy * TS - cam.y * TS + VH / 2;
+        const g = lctx.createRadialGradient(sx, sy, r * TS * 0.25, sx, sy, r * TS);
+        g.addColorStop(0, 'rgba(0,0,0,0.95)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        lctx.fillStyle = g;
+        lctx.beginPath(); lctx.arc(sx, sy, r * TS, 0, 7); lctx.fill();
+      };
+      hole(p.x, p.y - 0.4, p.torchLit ? 3.5 : 1.3);
+      for (const [k, pr] of game.world.props) {
+        if (pr.kind !== 'campfire') continue;
+        const [px, py] = k.split(',').map(Number);
+        hole(px + 0.5, py + 0.5, T.LIGHT_CAMPFIRE + Math.sin(tick * 6) * 0.15);
+      }
+      lctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(lightCv, 0, 0);
+    }
+
+    // κόκκινη λάμψη τραύματος
+    if (p.hurtT > 0) {
+      ctx.fillStyle = `rgba(200,20,20,${p.hurtT * 0.7})`;
+      ctx.fillRect(0, 0, VW, VH);
+    }
+  }
+
+  function drawProp(pr, px, py, cam) {
+    let img;
+    if (pr.kind === 'bush') img = pr.looted ?
+      (Assets.props.bush_empty || Assets.props.bush) : Assets.props.bush;
+    else if (pr.kind === 'campfire') {
+      img = ((tick * 5) | 0) % 2 ? Assets.props.campfire2 : Assets.props.campfire;
+    } else img = Assets.props[pr.kind];
+    if (!img) return;
+    drawSprite(img, px + 0.5, py + 1, cam);
   }
 
   // ---------- loop ----------
@@ -731,20 +962,32 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (state === 'PLAY') {
-      update(dt);
+      if (!panel) update(dt);
       render(dt);
-    } else if (state === 'MENU' || state === 'META') {
-      ctx.fillStyle = '#06080c';
-      ctx.fillRect(0, 0, W, H);
     }
   }
   requestAnimationFrame(loop);
 
-  // ---------- debug hook (smoke tests) ----------
+  // αποθήκευση όταν κρύβεται η σελίδα
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === 'PLAY') SaveGame.save(game);
+  });
+
+  // ---------- boot ----------
+  Assets.loadOverrides(() => { refreshTitle(); World.invalidateAll(); });
+  refreshTitle();
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load('11px "Press Start 2P"');
+    document.fonts.load('10px VT323');
+  }
+
+  // debug hook για tests
   window.__debug = {
-    game, meta,
+    game, World, Inv, Defs, Entities, SaveGame, Monetize,
     get state() { return state; },
-    setState, newRun, nextDeck, dieRun, winRun, renderShop,
-    PlayerSys, Rogue, Procgen, Engine,
+    get panel() { return panel; },
+    setState, newGame, continueGame, act, openPanel, closePanel,
+    craft, startBuild, buildRaftStage, sailAway, die, gatherGrass,
+    findTarget, toggleTorch, collectNear,
   };
 })();
