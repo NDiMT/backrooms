@@ -12,41 +12,62 @@ const Engine = (() => {
 
   const zbuffer = new Float32Array(W);
 
-  // προ-ζωγραφισμένες λωρίδες δαπέδου/οροφής ανά θέμα deck
-  let floorStrip = null, ceilStrip = null, themeIdx = -1;
+  /* ---- per-pixel textured δάπεδο/οροφή (κλασικό DOOM floor casting) ---- */
+  let surfId = null, surfBuf = null;
+  const texCache = new WeakMap();
 
-  function buildFloorCeil(theme) {
-    // theme: {floor:'#..', ceil:'#..'}
-    floorStrip = document.createElement('canvas');
-    floorStrip.width = 1; floorStrip.height = VH - HORIZON;
-    let ctx = floorStrip.getContext('2d');
-    let g = ctx.createLinearGradient(0, 0, 0, floorStrip.height);
-    g.addColorStop(0, shade(theme.floor, 0.15));
-    g.addColorStop(1, theme.floor);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1, floorStrip.height);
-    // dithering γραμμές για ρετρό υφή
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    for (let y = 0; y < floorStrip.height; y += 2) ctx.fillRect(0, y, 1, 1);
-
-    ceilStrip = document.createElement('canvas');
-    ceilStrip.width = 1; ceilStrip.height = HORIZON;
-    ctx = ceilStrip.getContext('2d');
-    g = ctx.createLinearGradient(0, 0, 0, HORIZON);
-    g.addColorStop(0, theme.ceil);
-    g.addColorStop(1, shade(theme.ceil, 0.15));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1, HORIZON);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    for (let y = 0; y < HORIZON; y += 2) ctx.fillRect(0, y, 1, 1);
+  // Κάθε texture δειγματίζεται ως 64x64 Uint32 (RGBA little-endian).
+  // Αν το getImageData αποτύχει (tainted canvas σε file://), πέφτουμε
+  // στο procedural fallback του ίδιου δείκτη.
+  function texData(src, fallback) {
+    let t = texCache.get(src);
+    if (t) return t;
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(src, 0, 0, 64, 64);
+    try {
+      t = new Uint32Array(x.getImageData(0, 0, 64, 64).data.buffer);
+    } catch (e) {
+      t = fallback && fallback !== src ? texData(fallback) : new Uint32Array(64 * 64).fill(0xff202028);
+    }
+    texCache.set(src, t);
+    return t;
   }
 
-  function shade(hex, mul) {
-    const n = parseInt(hex.slice(1), 16);
-    const r = ((n >> 16) & 255) * mul | 0;
-    const g = ((n >> 8) & 255) * mul | 0;
-    const b = (n & 255) * mul | 0;
-    return `rgb(${r},${g},${b})`;
+  function drawSurfaces(ctx, cam, theme) {
+    if (!surfId) {
+      surfId = ctx.createImageData(W, VH);
+      surfBuf = new Uint32Array(surfId.data.buffer);
+    }
+    const ci = theme.idx === 3 ? 1 : 0;
+    const fTex = texData(Assets.floorTex[theme.idx], Assets.floorTexFallback[theme.idx]);
+    const cTex = texData(Assets.ceilTex[ci], Assets.ceilTexFallback[ci]);
+    const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
+    const planeX = -dirY * PLANE, planeY = dirX * PLANE;
+    const rx0 = dirX - planeX, ry0 = dirY - planeY;
+    const rx1 = dirX + planeX, ry1 = dirY + planeY;
+    for (let y = 0; y < VH; y++) {
+      const p = y < HORIZON ? HORIZON - y : y - HORIZON + 1;
+      const rowDist = HORIZON / p;
+      const m = Math.max(0, 256 - (rowDist / MAX_DIST * 1.15 * 256)) | 0;
+      const tex = y < HORIZON ? cTex : fTex;
+      let fx = cam.x + rowDist * rx0;
+      let fy = cam.y + rowDist * ry0;
+      const sx = rowDist * (rx1 - rx0) / W;
+      const sy = rowDist * (ry1 - ry0) / W;
+      let o = y * W;
+      for (let x = 0; x < W; x++) {
+        const c = tex[(((fy * 64) & 63) << 6) + ((fx * 64) & 63)];
+        const r = ((c & 255) * m) >> 8;
+        const g = (((c >> 8) & 255) * m) >> 8;
+        const b = (((c >> 16) & 255) * m) >> 8;
+        surfBuf[o + x] = 0xff000000 | (b << 16) | (g << 8) | r;
+        fx += sx; fy += sy;
+      }
+    }
+    ctx.putImageData(surfId, 0, 0);
   }
 
   /* Ρίχνει μία ακτίνα. Επιστρέφει {dist, texU, tex, side} ή null.
@@ -111,11 +132,8 @@ const Engine = (() => {
   }
 
   function render(ctx, world, cam, sprites, theme, tick) {
-    if (theme.idx !== themeIdx) { buildFloorCeil(theme); themeIdx = theme.idx; }
-
-    // οροφή/δάπεδο
-    ctx.drawImage(ceilStrip, 0, 0, 1, HORIZON, 0, 0, W, HORIZON);
-    ctx.drawImage(floorStrip, 0, 0, 1, VH - HORIZON, 0, HORIZON, W, VH - HORIZON);
+    // οροφή/δάπεδο με per-pixel texture casting
+    drawSurfaces(ctx, cam, theme);
 
     const dirX = Math.cos(cam.angle), dirY = Math.sin(cam.angle);
     const planeX = -dirY * PLANE, planeY = dirX * PLANE;

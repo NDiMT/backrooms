@@ -938,6 +938,33 @@ const Assets = (() => {
       dead: px(faceDead, facePal, 3),
     };
 
+    // δάπεδα/οροφές ανά deck για το per-pixel casting (fallback: πλάκες)
+    function mkSurf(base, line) {
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = base; ctx.fillRect(0, 0, 64, 64);
+      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      for (let gx = 0; gx < 64; gx += 16) {
+        for (let gy = 0; gy < 64; gy += 16) ctx.strokeRect(gx + 0.5, gy + 0.5, 16, 16);
+      }
+      for (let i = 0; i < 180; i++) {
+        ctx.fillStyle = `rgba(0,0,0,${0.05 + (i % 3) * 0.04})`;
+        ctx.fillRect((Math.random() * 64) | 0, (Math.random() * 64) | 0, 1, 1);
+      }
+      return c;
+    }
+    A.floorTex = [
+      mkSurf('#2c3444', '#20283a'),
+      mkSurf('#3a2820', '#2a1c14'),
+      mkSurf('#243428', '#182418'),
+      mkSurf('#231b30', '#161022'),
+    ];
+    A.ceilTex = [mkSurf('#1a202c', '#12161f'), mkSurf('#120d1c', '#0c0814')];
+    // τα procedural κρατιούνται ως fallback αν το file:// ταϊνάρει το canvas
+    A.floorTexFallback = A.floorTex.slice();
+    A.ceilTexFallback = A.ceilTex.slice();
+
     A.ui = { statusbar: null }; // προαιρετικό AI panel (ui_statusbar.png)
 
     return A;
@@ -1008,6 +1035,8 @@ const Assets = (() => {
   for (const key of Object.keys(A.projectiles)) reg(`proj_${key}`, img => { A.projectiles[key] = img; });
   reg('prop_terminal', img => { A.props.terminal = img; });
   reg('ui_statusbar', img => { A.ui.statusbar = img; });
+  A.floorTex.forEach((_, i) => reg(`tex_floor${i}`, img => { A.floorTex[i] = img; }));
+  A.ceilTex.forEach((_, i) => reg(`tex_ceil${i}`, img => { A.ceilTex[i] = img; }));
 
   A.OVERRIDE_KEYS = OVERRIDES.map(o => o.path);
 
