@@ -8,3 +8,4 @@ android/
 *.log
 .genraw/
 .initsrc/
+dist/

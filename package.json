@@ -1,7 +1,7 @@
 {
-  "name": "driftland",
+  "name": "deeper",
   "version": "1.0.0",
-  "description": "DRIFTLAND — castaway island survival-crafting for browser / Android",
+  "description": "DEEPER — idle descent roguelite through liminal floors, for browser / Android",
   "private": true,
   "scripts": {
     "build": "node scripts/build-www.js",

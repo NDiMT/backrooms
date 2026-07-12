@@ -1,73 +1,75 @@
-/* DRIFTLAND — Save/load σε localStorage. Ο κόσμος αναπαράγεται από το
-   seed· σώζουμε μόνο diffs (props που άλλαξαν/μπήκαν), παίκτη και χρόνο. */
+/* DEEPER — Save/load σε localStorage. Δεν σώζουμε τον όροφο (τα runs
+   είναι σύντομα)· σώζουμε το meta: τράπεζα, upgrades, πρόοδο, daily,
+   και lastSeen για τα offline κέρδη των drones. */
 
 const SaveGame = (() => {
-  const KEY = 'dl_save_v1';
+  const KEY = 'deeper_save_v1';
 
-  function serialize(game) {
-    const props = [];
-    // Σώζουμε ΟΛΟ το props map ως λίστα — απλό και ασφαλές (λίγα KB).
-    for (const [k, p] of game.world.props) {
-      props.push([k, p.kind, Math.round(p.hp * 10) / 10, p.looted ? 1 : 0,
-        Math.round(p.regrow || 0), p.inv || null, p.lit ? 1 : 0]);
-    }
+  function fresh() {
     return {
       v: 1,
-      seed: game.world.seed,
-      raftStage: game.raftStage,
-      time: game.time,
-      day: game.day,
-      props,
-      player: {
-        x: game.player.x, y: game.player.y,
-        hp: game.player.hp, hunger: game.player.hunger,
-        inv: game.player.inv, hotbar: game.player.hotbar,
-        spawn: game.player.spawn,
-      },
-      stats: game.stats,
-      flags: game.flags,
+      bank: 0,               // scrap στην τράπεζα
+      cores: 0,              // μόνιμα cores (δεν ξοδεύονται)
+      up: {},                // upgrade id -> level
+      deepest: 0,            // βαθύτερος όροφος που έχει καθαριστεί
+      checkpoint: 1,         // όροφος εκκίνησης (11, 21, … μετά από boss)
+      stats: { runs: 0, kills: 0, bosses: 0, floors: 0, scrapTotal: 0 },
+      daily: { date: '', score: -1, num: 0 },
+      lastSeen: 0,
     };
   }
 
-  function save(game) {
+  let data = null;
+
+  /* Επιλεκτικό, τύπο-ασφαλές merge: ένα μισογραμμένο/πειραγμένο save δεν
+     πρέπει ποτέ να ρίχνει NaN ή null μέσα στην πρόοδο. */
+  function load() {
+    if (data) return data;
+    data = fresh();
     try {
-      localStorage.setItem(KEY, JSON.stringify(serialize(game)));
+      const d = JSON.parse(localStorage.getItem(KEY));
+      if (d && d.v === 1) {
+        const num = (v, f) => (typeof v === 'number' && isFinite(v) ? v : f);
+        data.bank = num(d.bank, 0);
+        data.cores = num(d.cores, 0);
+        data.deepest = num(d.deepest, 0);
+        data.checkpoint = Math.max(1, num(d.checkpoint, 1));
+        data.lastSeen = num(d.lastSeen, 0);
+        if (d.up && typeof d.up === 'object') {
+          for (const [k, v] of Object.entries(d.up)) data.up[k] = num(v, 0);
+        }
+        if (d.stats && typeof d.stats === 'object') {
+          for (const k of Object.keys(data.stats)) {
+            data.stats[k] = num(d.stats[k], data.stats[k]);
+          }
+        }
+        if (d.daily && typeof d.daily === 'object') {
+          if (typeof d.daily.date === 'string') data.daily.date = d.daily.date;
+          data.daily.score = num(d.daily.score, -1);
+          data.daily.num = num(d.daily.num, 0);
+        }
+      }
+    } catch (e) { /* κατεστραμμένο — fresh */ }
+    return data;
+  }
+
+  function save() {
+    if (!data) return false;
+    data.lastSeen = Date.now();
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
       return true;
     } catch (e) { return false; }
   }
 
-  function load() {
-    try {
-      const d = JSON.parse(localStorage.getItem(KEY));
-      if (d && d.v === 1 && typeof d.seed === 'number') return d;
-    } catch (e) { /* κατεστραμμένο */ }
-    return null;
-  }
-
-  function apply(game, d) {
-    game.world = World.generate(d.seed);
-    game.world.props.clear();
-    for (const [k, kind, hp, looted, regrow, inv, lit] of d.props) {
-      const p = World.freshProp(kind);
-      p.hp = hp; p.looted = !!looted; p.regrow = regrow || 0;
-      if (inv) p.inv = inv;
-      if (lit) p.lit = true;
-      game.world.props.set(k, p);
-    }
-    game.raftStage = d.raftStage;
-    game.time = d.time;
-    game.day = d.day;
-    Object.assign(game.player, d.player);
-    game.stats = d.stats || game.stats;
-    game.flags = d.flags || game.flags;
-    World.invalidateAll();
-  }
-
   function clear() {
+    data = fresh();
     try { localStorage.removeItem(KEY); } catch (e) { /* ok */ }
   }
 
-  function exists() { return !!load(); }
+  function isNew() {
+    try { return !localStorage.getItem(KEY); } catch (e) { return true; }
+  }
 
-  return { save, load, apply, clear, exists };
+  return { load, save, clear, isNew };
 })();

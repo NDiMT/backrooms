@@ -1,97 +1,124 @@
-/* DRIFTLAND — Ορισμοί: αντικείμενα, συνταγές, buildables, tuning. */
+/* DEEPER — Ορισμοί: biomes, upgrades, tuning. */
 
 const Defs = (() => {
 
-  // ---------- items ----------
-  const ITEMS = {
-    wood:        { name: 'Wood', stack: 99 },
-    stone:       { name: 'Stone', stack: 99 },
-    fiber:       { name: 'Fiber', stack: 99 },
-    berry:       { name: 'Berries', stack: 99, food: { hunger: 8 } },
-    meat_raw:    { name: 'Raw Meat', stack: 99, food: { hunger: 12, poison: 0.2 } },
-    meat_cooked: { name: 'Cooked Meat', stack: 99, food: { hunger: 35, hp: 5 } },
-    metal:       { name: 'Scrap Metal', stack: 99 },
-    resin:       { name: 'Resin', stack: 99 },
-    rope:        { name: 'Rope', stack: 99 },
-    cloth:       { name: 'Cloth', stack: 99 },
-    axe:         { name: 'Axe', stack: 1, tool: 'axe', power: 3 },
-    pickaxe:     { name: 'Pickaxe', stack: 1, tool: 'pickaxe', power: 3 },
-    spear:       { name: 'Spear', stack: 1, tool: 'weapon', power: 8 },
-    torch:       { name: 'Torch', stack: 1, tool: 'light', light: 3.5 },
-  };
-
-  // ---------- συνταγές (craft από inventory) ----------
-  // tier 2 απαιτεί κοντινό workbench
-  const RECIPES = [
-    { id: 'axe', out: 'axe', n: 1, tier: 1,
-      cost: { wood: 3, stone: 2, fiber: 2 },
-      hint: 'Chops trees much faster' },
-    { id: 'pickaxe', out: 'pickaxe', n: 1, tier: 1,
-      cost: { wood: 3, stone: 3, fiber: 2 },
-      hint: 'Mines rock much faster' },
-    { id: 'spear', out: 'spear', n: 1, tier: 1,
-      cost: { wood: 2, stone: 1, fiber: 2 },
-      hint: 'A real weapon' },
-    { id: 'rope', out: 'rope', n: 1, tier: 1,
-      cost: { fiber: 3 },
-      hint: 'Twisted plant fiber' },
-    { id: 'torch', out: 'torch', n: 1, tier: 1,
-      cost: { wood: 1, fiber: 1, resin: 1 },
-      hint: 'Light in the night, scares shades' },
-    { id: 'cloth', out: 'cloth', n: 1, tier: 2,
-      cost: { fiber: 4 },
-      hint: 'Woven at the workbench' },
-    { id: 'meat_cooked', out: 'meat_cooked', n: 1, tier: 1, fire: true,
-      cost: { meat_raw: 1 },
-      hint: 'Cook near a campfire' },
+  // ---------- biomes ανά βάθος ----------
+  // dark: πόσο σκοτεινός είναι ο όροφος (0..1), palette για procedural tiles
+  const BIOMES = [
+    { key: 'office',  name: 'OFFICES',  from: 1,
+      floorA: '#8a8064', floorB: '#7d7358', wall: '#5a5244',
+      wallTop: '#6e6552', accent: '#c8b878', dark: 0.50 },
+    { key: 'parking', name: 'PARKING',  from: 10,
+      floorA: '#62666a', floorB: '#585c60', wall: '#3e4246',
+      wallTop: '#50545a', accent: '#e8c832', dark: 0.62 },
+    { key: 'mall',    name: 'THE MALL', from: 20,
+      floorA: '#9a8e86', floorB: '#8c8078', wall: '#5e5450',
+      wallTop: '#746a64', accent: '#7ec8d8', dark: 0.58 },
+    { key: 'pools',   name: 'THE POOLS', from: 30,
+      floorA: '#7ea8b0', floorB: '#729ca4', wall: '#3e6068',
+      wallTop: '#527880', accent: '#c8ecf0', dark: 0.66 },
+    { key: 'backrooms', name: 'THE BACKROOMS', from: 40,
+      floorA: '#b0a050', floorB: '#a49448', wall: '#6e6228',
+      wallTop: '#887a34', accent: '#ffe86a', dark: 0.74 },
   ];
 
-  // ---------- buildables (τοποθετούνται στον κόσμο) ----------
-  const BUILDS = [
-    { id: 'campfire', name: 'Campfire', tier: 1,
-      cost: { wood: 4, stone: 4 },
-      hint: 'Light, cooking, keeps shades away' },
-    { id: 'workbench', name: 'Workbench', tier: 1,
-      cost: { wood: 6, stone: 2, rope: 2 },
-      hint: 'Unlocks advanced crafting' },
-    { id: 'wall', name: 'Palisade Wall', tier: 2,
-      cost: { wood: 3, rope: 1 },
-      hint: 'Blocks monsters' },
-    { id: 'chest', name: 'Chest', tier: 2,
-      cost: { wood: 5, rope: 1 },
-      hint: 'Stores 12 stacks' },
-    { id: 'bed', name: 'Leaf Bed', tier: 2,
-      cost: { wood: 4, cloth: 3 },
-      hint: 'Sleep through the night, sets respawn' },
+  function biomeFor(floor) {
+    let b = BIOMES[0];
+    for (const bi of BIOMES) if (floor >= bi.from) b = bi;
+    return b;
+  }
+  // κάθε 10 ορόφους μετά το τελευταίο biome, το backrooms «βαθαίνει»
+  function biomeTier(floor) {
+    return Math.floor((floor - 1) / 10);
+  }
+
+  // ---------- upgrades (μόνιμα, αγορά με scrap στο hub) ----------
+  // value(lvl) = τιμή του stat στο level αυτό
+  const UPGRADES = [
+    { id: 'speed',    name: 'RUNNING SHOES', icon: '👟', max: 8,
+      base: 30, mult: 2.0,
+      desc: lvl => 'Move speed ' + (3.2 + lvl * 0.22).toFixed(1),
+      value: lvl => 3.2 + lvl * 0.22 },
+    { id: 'vitality', name: 'VITALITY', icon: '❤', max: 10,
+      base: 25, mult: 1.9,
+      desc: lvl => 'Max HP ' + (60 + lvl * 15),
+      value: lvl => 60 + lvl * 15 },
+    { id: 'damage',   name: 'CROWBAR', icon: '🗡', max: 10,
+      base: 35, mult: 2.0,
+      desc: lvl => 'Damage ' + (5 + lvl * 3),
+      value: lvl => 5 + lvl * 3 },
+    { id: 'light',    name: 'FLASHLIGHT', icon: '🔦', max: 8,
+      base: 40, mult: 2.1,
+      desc: lvl => 'Light radius ' + (1.7 + lvl * 0.4).toFixed(1) + ' — shades fear light',
+      value: lvl => 1.7 + lvl * 0.4 },
+    { id: 'greed',    name: 'LOOT BAG', icon: '💰', max: 10,
+      base: 45, mult: 2.1,
+      desc: lvl => '+' + (lvl * 15) + '% scrap from loot',
+      value: lvl => 1 + lvl * 0.15 },
+    { id: 'drones',   name: 'SCAVENGER DRONES', icon: '🤖', max: 12,
+      base: 60, mult: 1.85,
+      desc: lvl => lvl === 0 ? 'Earn scrap while away'
+        : (lvl * 3) + ' scrap/min while away',
+      value: lvl => lvl * 3 },
+    { id: 'battery',  name: 'DRONE BATTERY', icon: '🔋', max: 6,
+      base: 80, mult: 2.2,
+      desc: lvl => 'Drones run ' + (2 + lvl) + 'h offline',
+      value: lvl => 2 + lvl },
   ];
 
-  // ---------- σκάφος απόδρασης (στο ναυάγιο) ----------
-  const RAFT_STAGES = [
-    { cost: { wood: 8, rope: 4 },
-      label: 'Lash the log base', done: 'A sturdy log base floats!' },
-    { cost: { wood: 12, resin: 4 },
-      label: 'Build & seal the deck', done: 'The deck is sealed watertight.' },
-    { cost: { wood: 6, rope: 6 },
-      label: 'Raise the mast', done: 'The mast stands tall.' },
-    { cost: { cloth: 6, metal: 2 },
-      label: 'Sail & rudder', done: 'The raft is ready to sail!' },
-  ];
+  function upCost(u, lvl) {
+    return Math.round(u.base * Math.pow(u.mult, lvl));
+  }
 
   // ---------- tuning ----------
   const T = {
-    DAY_LEN: 240,          // δευτερόλεπτα ημέρας
-    NIGHT_LEN: 120,        // δευτερόλεπτα νύχτας
-    HUNGER_DRAIN: 100 / 480, // πλήρης εξάντληση σε 8 λεπτά
-    STARVE_DPS: 2,
-    HP_REGEN: 1.2,         // όταν χορτάτος > 60
-    HAND_POWER: 1,
-    PLAYER_HP: 100,
-    PLAYER_ATK_CD: 0.45,
-    SHADE_SPAWN_EVERY: 18,
-    SHADE_MAX: 4,
-    LIGHT_CAMPFIRE: 4.5,
-    RESPAWN_HP: 60,
+    PLAYER_ATK_CD: 0.38,
+    PLAYER_ATK_RANGE: 1.15,
+    RESPAWN_HP_FRAC: 0.6,
+
+    // όροφοι
+    FLOOR_W: 30, FLOOR_H: 30,
+    LOCK_FROM: 4,          // από αυτόν τον όροφο μπορεί να κλειδώνει η έξοδος
+    LOCK_CHANCE: 0.55,
+    VAULT_CHANCE: 0.6,     // πιθανότητα bonus vault (ανοίγει με ad)
+
+    // shades
+    SHADE_BASE: 2,
+    SHADE_PER_FLOOR: 0.35,
+    SHADE_MAX: 10,
+    shadeHp: f => 14 + f * 1.6,
+    shadeDmg: f => 7 + f * 0.5,
+    shadeSpeed: f => Math.min(3.2, 1.55 + f * 0.03),
+    LIGHT_SLOW: 0.4,       // πολλαπλασιαστής ταχύτητας shade μέσα στο φως
+
+    // boss (κάθε 10ος όροφος)
+    bossHp: f => 70 + f * 7,
+    bossDmg: f => 13 + f * 0.6,
+    bossSpeed: f => Math.min(2.6, 1.7 + f * 0.015),
+    BOSS_SCALE: 1.65,
+
+    // loot
+    scrapPile: f => Math.round((3 + Math.random() * 3) * (1 + f * 0.13)),
+    crateScrap: f => Math.round((6 + Math.random() * 5) * (1 + f * 0.13)),
+    CRATE_MEDKIT: 0.22,
+    CRATE_BATTERY: 0.10,
+    crateCore: f => (f >= 15 ? 0.04 : 0),
+    MEDKIT_HEAL: 35,
+    BATTERY_TIME: 45,      // δευτ. διπλάσιο φως
+    GIVEUP_KEEP: 0.4,      // πεθαίνοντας χωρίς ad κρατάς 40% του run scrap
+
+    // cores: μόνιμα, δεν ξοδεύονται
+    CORE_SCRAP_BONUS: 0.10,   // +10% scrap ανά core
+    CORE_DMG_BONUS: 0.05,     // +5% damage ανά core
+
+    // idle
+    OFFLINE_MIN_S: 90,        // ελάχιστη απουσία για offline panel
+    droneDepthMult: deepest => 1 + Math.floor(deepest / 10) * 0.5,
+
+    // daily
+    DAILY_TIME: 99,           // δευτερόλεπτα
+    DAILY_FLOOR: 13,          // «βάθος» daily ορόφου (σταθερή δυσκολία)
   };
 
-  return { ITEMS, RECIPES, BUILDS, RAFT_STAGES, T };
+  return { BIOMES, biomeFor, biomeTier, UPGRADES, upCost, T };
 })();
