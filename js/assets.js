@@ -232,11 +232,19 @@ const Assets = (() => {
   A.loadOverrides = function (done) {
     let pending = OVERRIDES.length;
     if (!pending) { done && done(); return; }
+    // single-file builds (scripts/build-single.cjs) περνούν τα PNG
+    // inline ως data URIs μέσω window.__ASSET_DATA — τότε ό,τι λείπει
+    // από το map δεν υπάρχει, οπότε δεν χτυπάμε το δίκτυο καθόλου
+    const embedded = window.__ASSET_DATA;
     for (const o of OVERRIDES) {
+      if (embedded && !embedded[o.key]) {
+        if (--pending === 0) done && done();
+        continue;
+      }
       const img = new Image();
       img.onload = () => { o.apply(img); if (--pending === 0) done && done(); };
       img.onerror = () => { if (--pending === 0) done && done(); };
-      img.src = 'assets/' + o.key + '.png';
+      img.src = embedded ? embedded[o.key] : ('assets/' + o.key + '.png');
     }
   };
 
